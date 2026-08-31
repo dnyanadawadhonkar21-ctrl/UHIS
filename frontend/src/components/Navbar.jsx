@@ -1,79 +1,189 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect, useRef } from 'react';
 import { useAuth } from '../context/AuthContext';
-import { Shield, Bell, User, LogOut, RefreshCw, Cpu, Activity } from 'lucide-react';
+import { useTheme } from '../context/ThemeContext';
+import {
+  Activity,
+  LogOut,
+  RefreshCw,
+  Sun,
+  Moon,
+  Menu,
+  Search,
+  Bell,
+  ChevronDown,
+  User,
+  ShieldCheck,
+} from 'lucide-react';
 
-const Navbar = ({ onOpenRoleSwitcher }) => {
+const Navbar = ({ onOpenRoleSwitcher, onToggleSidebar, isSidebarCollapsed }) => {
   const { user, logout } = useAuth();
+  const { isDark, toggleTheme } = useTheme();
   const [showDropdown, setShowDropdown] = useState(false);
+  const [showNotifications, setShowNotifications] = useState(false);
+  const [searchQuery, setSearchQuery] = useState('');
+  const searchInputRef = useRef(null);
 
-  const getRoleBadgeColor = (role) => {
-    switch (role) {
-      case 'SUPER_ADMIN': return 'bg-purple-500/20 text-purple-400 border-purple-500/30';
-      case 'HOSPITAL_ADMIN': return 'bg-cyan-500/20 text-cyan-400 border-cyan-500/30';
-      case 'DOCTOR': return 'bg-emerald-500/20 text-emerald-400 border-emerald-500/30';
-      case 'PATIENT': return 'bg-blue-500/20 text-blue-400 border-blue-500/30';
-      case 'LABORATORY': return 'bg-amber-500/20 text-amber-400 border-amber-500/30';
-      case 'PHARMACY': return 'bg-rose-500/20 text-rose-400 border-rose-500/30';
-      case 'RECEPTIONIST': return 'bg-indigo-500/20 text-indigo-400 border-indigo-500/30';
-      default: return 'bg-slate-700 text-slate-300';
-    }
+  // Keyboard shortcut listener for Ctrl / or Cmd / to focus search
+  useEffect(() => {
+    const handleKeyDown = (e) => {
+      if ((e.ctrlKey || e.metaKey) && (e.key === '/' || e.key === 'k')) {
+        e.preventDefault();
+        searchInputRef.current?.focus();
+      }
+    };
+    window.addEventListener('keydown', handleKeyDown);
+    return () => window.removeEventListener('keydown', handleKeyDown);
+  }, []);
+
+  const getInitials = (name) => {
+    if (!name) return 'PT';
+    const parts = name.trim().split(' ');
+    if (parts.length >= 2) return `${parts[0][0]}${parts[1][0]}`.toUpperCase();
+    return name.substring(0, 2).toUpperCase();
   };
 
+  const patientInitials = getInitials(user?.fullName);
+  const patientName = user?.fullName || 'Patient Portal';
+  const roleDisplay = user?.role === 'PATIENT' ? 'Patient' : user?.role || 'User';
+
+  const mockNotifications = [
+    { id: 1, title: 'Lab Report Ready', time: '10m ago', unread: true },
+    { id: 2, title: 'OPD Appointment Confirmed', time: '1h ago', unread: true },
+    { id: 3, title: 'Vaccine Reminder', time: '1d ago', unread: false },
+  ];
+
+  const unreadCount = mockNotifications.filter((n) => n.unread).length;
+
   return (
-    <header className="sticky top-0 z-30 glass-card border-b border-slate-800 px-6 py-3.5 flex items-center justify-between">
-      <div className="flex items-center gap-4">
+    <header className="sticky top-0 z-40 bg-white/95 dark:bg-slate-900/95 backdrop-blur-md border-b border-slate-200/80 dark:border-slate-800 px-4 md:px-6 py-2.5 flex items-center justify-between transition-colors shadow-sm">
+      {/* Left Branding & Sidebar Toggle Button */}
+      <div className="flex items-center gap-3">
+        <button
+          onClick={onToggleSidebar}
+          aria-label="Toggle Navigation Sidebar"
+          title="Toggle Navigation Sidebar"
+          className="p-2 rounded-xl text-slate-600 dark:text-slate-300 hover:bg-slate-100 dark:hover:bg-slate-800 transition focus:outline-none focus:ring-2 focus:ring-teal-500"
+        >
+          <Menu className="w-5 h-5" />
+        </button>
+
         <div className="flex items-center gap-2.5">
-          <div className="w-10 h-10 rounded-xl bg-gradient-to-tr from-cyan-500 to-emerald-400 flex items-center justify-center shadow-lg shadow-cyan-500/20">
-            <Activity className="w-6 h-6 text-slate-950 font-bold" />
+          <div className="w-9 h-9 rounded-xl bg-teal-600 dark:bg-teal-500 flex items-center justify-center shadow-md shadow-teal-500/20">
+            <Activity className="w-5 h-5 text-white font-bold" />
           </div>
-          <div>
-            <h1 className="font-bold text-lg tracking-tight text-white flex items-center gap-2">
-              UHIS <span className="text-xs px-2 py-0.5 rounded-full bg-cyan-500/20 text-cyan-400 border border-cyan-500/30">v1.0 StartUp Edition</span>
+          <div className="hidden sm:block">
+            <h1 className="font-extrabold text-base text-slate-900 dark:text-white leading-tight flex items-center gap-2">
+              UHIS <span className="text-[10px] px-2 py-0.5 rounded-full bg-teal-50 dark:bg-teal-500/20 text-teal-700 dark:text-teal-400 border border-teal-200 dark:border-teal-500/30 font-bold">Portal</span>
             </h1>
-            <p className="text-xs text-slate-400">Unified Healthcare Interface System</p>
           </div>
         </div>
       </div>
 
-      <div className="flex items-center gap-4">
-        {/* Quick Role Switcher Button */}
+      {/* Center Search Bar */}
+      <div className="flex-1 max-w-md mx-4 hidden sm:block">
+        <div className="relative">
+          <Search className="w-4 h-4 text-slate-400 dark:text-slate-500 absolute left-3.5 top-2.5 pointer-events-none" />
+          <input
+            ref={searchInputRef}
+            type="text"
+            placeholder="Search for records, reports, doctors..."
+            value={searchQuery}
+            onChange={(e) => setSearchQuery(e.target.value)}
+            className="w-full pl-10 pr-16 py-2 rounded-xl bg-slate-50 dark:bg-slate-800/80 border border-slate-200 dark:border-slate-700 text-xs text-slate-900 dark:text-white placeholder-slate-400 focus:outline-none focus:border-teal-500 focus:ring-1 focus:ring-teal-500 transition"
+          />
+          <span className="absolute right-3 top-2 px-1.5 py-0.5 rounded bg-slate-200 dark:bg-slate-700 text-slate-500 dark:text-slate-400 text-[10px] font-mono font-bold pointer-events-none">
+            Ctrl /
+          </span>
+        </div>
+      </div>
+
+      {/* Right Controls */}
+      <div className="flex items-center gap-3">
+        {/* Quick Role Switcher */}
         <button
           onClick={onOpenRoleSwitcher}
-          className="flex items-center gap-2 px-3.5 py-1.5 rounded-lg bg-slate-800 hover:bg-slate-700 text-cyan-400 text-xs font-semibold border border-slate-700 transition"
-          title="Switch role instantly to test other dashboards"
+          className="hidden lg:flex items-center gap-1.5 px-3 py-1.5 rounded-xl bg-slate-100 dark:bg-slate-800 hover:bg-slate-200 dark:hover:bg-slate-700 text-teal-700 dark:text-teal-400 text-xs font-bold border border-slate-200 dark:border-slate-700 transition"
+          title="Switch role demo"
         >
           <RefreshCw className="w-3.5 h-3.5" />
-          Switch Role Demo
+          <span>Switch Role</span>
         </button>
 
-        {/* User Role Badge */}
-        {user && (
-          <span className={`px-2.5 py-1 rounded-full text-xs font-semibold border ${getRoleBadgeColor(user.role)}`}>
-            {user.role}
-          </span>
-        )}
+        {/* Light / Dark Mode Toggle */}
+        <button
+          onClick={toggleTheme}
+          aria-label={`Switch to ${isDark ? 'Light' : 'Dark'} mode`}
+          title={`Switch to ${isDark ? 'Light' : 'Dark'} mode`}
+          className="p-2 rounded-xl bg-slate-100 dark:bg-slate-800 hover:bg-slate-200 dark:hover:bg-slate-700 text-slate-700 dark:text-slate-200 border border-slate-200 dark:border-slate-700 transition focus:outline-none focus:ring-2 focus:ring-teal-500"
+        >
+          {isDark ? <Sun className="w-4 h-4 text-amber-400" /> : <Moon className="w-4 h-4 text-slate-700" />}
+        </button>
 
-        {/* Profile Dropdown */}
+        {/* Notifications Icon + Badge */}
+        <div className="relative">
+          <button
+            onClick={() => setShowNotifications(!showNotifications)}
+            aria-label="Notifications"
+            className="p-2 rounded-xl bg-slate-100 dark:bg-slate-800 hover:bg-slate-200 dark:hover:bg-slate-700 text-slate-700 dark:text-slate-200 border border-slate-200 dark:border-slate-700 transition relative focus:outline-none focus:ring-2 focus:ring-teal-500"
+          >
+            <Bell className="w-4 h-4" />
+            {unreadCount > 0 && (
+              <span className="absolute -top-1 -right-1 w-4 h-4 rounded-full bg-rose-500 text-white text-[10px] font-black flex items-center justify-center">
+                {unreadCount}
+              </span>
+            )}
+          </button>
+
+          {showNotifications && (
+            <div className="absolute right-0 mt-2 w-72 rounded-2xl bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-700 shadow-2xl py-2 z-50">
+              <div className="px-4 py-2 border-b border-slate-100 dark:border-slate-800 flex items-center justify-between">
+                <span className="text-xs font-bold text-slate-900 dark:text-white">Health Alerts & Updates</span>
+                <span className="text-[10px] px-2 py-0.5 rounded-full bg-teal-50 dark:bg-teal-500/20 text-teal-600 dark:text-teal-400 font-bold">
+                  {unreadCount} New
+                </span>
+              </div>
+              <div className="divide-y divide-slate-100 dark:divide-slate-800 max-h-60 overflow-y-auto">
+                {mockNotifications.map((n) => (
+                  <div key={n.id} className="p-3 hover:bg-slate-50 dark:hover:bg-slate-800/50 transition">
+                    <p className="text-xs font-bold text-slate-800 dark:text-slate-200">{n.title}</p>
+                    <p className="text-[10px] text-slate-400 mt-0.5">{n.time}</p>
+                  </div>
+                ))}
+              </div>
+            </div>
+          )}
+        </div>
+
+        {/* Patient Profile Dropdown */}
         <div className="relative">
           <button
             onClick={() => setShowDropdown(!showDropdown)}
-            className="flex items-center gap-2 p-1.5 rounded-lg hover:bg-slate-800 text-slate-200 transition"
+            aria-label="User account menu"
+            aria-expanded={showDropdown}
+            className="flex items-center gap-2.5 p-1.5 rounded-xl hover:bg-slate-100 dark:hover:bg-slate-800 transition focus:outline-none focus:ring-2 focus:ring-teal-500"
           >
-            <div className="w-8 h-8 rounded-full bg-slate-700 flex items-center justify-center text-cyan-400 font-semibold border border-slate-600">
-              {user?.fullName?.charAt(0) || 'U'}
+            <div className="w-8 h-8 rounded-xl bg-teal-600 dark:bg-teal-500 text-white flex items-center justify-center font-extrabold text-xs shadow-sm">
+              {patientInitials}
             </div>
-            <span className="text-sm font-medium hidden md:block">{user?.fullName || 'User'}</span>
+            <div className="text-left hidden md:block leading-tight">
+              <p className="text-xs font-bold text-slate-900 dark:text-white">{patientName}</p>
+              <p className="text-[11px] text-teal-600 dark:text-teal-400 font-medium">{roleDisplay}</p>
+            </div>
+            <ChevronDown className="w-3.5 h-3.5 text-slate-400 hidden md:block" />
           </button>
 
           {showDropdown && (
-            <div className="absolute right-0 mt-2 w-56 rounded-xl glass-card border border-slate-700 shadow-2xl py-2 z-50">
-              <div className="px-4 py-2 border-b border-slate-800">
-                <p className="text-xs text-slate-400">Signed in as</p>
-                <p className="text-sm font-semibold text-white truncate">{user?.email}</p>
+            <div className="absolute right-0 mt-2 w-56 rounded-2xl bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-700 shadow-2xl py-2 z-50">
+              <div className="px-4 py-2 border-b border-slate-100 dark:border-slate-800">
+                <p className="text-[11px] text-slate-400">Signed in as</p>
+                <p className="text-xs font-bold text-slate-900 dark:text-white truncate">{user?.email}</p>
+                <span className="inline-block text-[10px] px-2 py-0.5 rounded bg-teal-50 dark:bg-teal-500/20 text-teal-700 dark:text-teal-400 font-bold mt-1">
+                  {user?.role}
+                </span>
               </div>
               <button
                 onClick={logout}
-                className="w-full flex items-center gap-2 px-4 py-2 text-sm text-rose-400 hover:bg-slate-800/50 transition text-left"
+                className="w-full flex items-center gap-2 px-4 py-2.5 text-xs font-bold text-rose-600 dark:text-rose-400 hover:bg-rose-50 dark:hover:bg-slate-800 transition text-left"
               >
                 <LogOut className="w-4 h-4" />
                 Sign Out

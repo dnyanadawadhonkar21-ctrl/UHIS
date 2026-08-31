@@ -10,6 +10,6 @@ router.get('/profile/:patientId?', patientController.getPatientProfile);
 router.get('/timeline/:patientId?', patientController.getUnifiedTimeline);
 router.post('/appointments', rbacMiddleware('PATIENT', 'RECEPTIONIST'), patientController.bookAppointment);
 router.put('/appointments/:appointmentId/cancel', patientController.cancelAppointment);
-router.put('/health-details', rbacMiddleware('PATIENT'), patientController.updateEmergencyContacts);
+router.put('/profile', rbacMiddleware('PATIENT'), patientController.updatePatientProfile);
 
 module.exports = router;

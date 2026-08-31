@@ -95,6 +95,10 @@ model Patient {
   emergencyPhone     String?
   allergies          String?
   chronicConditions  String?
+  pastSurgeries      String?
+  pastMedications    String?
+  height             String?
+  weight             String?
   createdAt          DateTime     @default(now())
   updatedAt          DateTime     @updatedAt
 

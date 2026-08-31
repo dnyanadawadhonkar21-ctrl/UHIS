@@ -1,10 +1,12 @@
-import React, { useState } from 'react';
+import React from 'react';
 import { BrowserRouter as Router, Routes, Route, Navigate } from 'react-router-dom';
 import { AuthProvider, useAuth } from './context/AuthContext';
-import Navbar from './components/Navbar';
-import Sidebar from './components/Sidebar';
-import QuickRoleSwitcherModal from './components/QuickRoleSwitcherModal';
+import { ThemeProvider } from './context/ThemeContext';
+import { ToastProvider } from './context/ToastContext';
+import { DashboardPreferenceProvider } from './context/DashboardPreferenceContext';
 
+import LandingPage from './pages/LandingPage';
+import DashboardSelectionPage from './pages/DashboardSelectionPage';
 import Login from './pages/Login';
 import Register from './pages/Register';
 import SuperAdminDashboard from './pages/SuperAdminDashboard';
@@ -17,16 +19,27 @@ import ReceptionistDashboard from './pages/ReceptionistDashboard';
 import AISuiteView from './pages/AISuiteView';
 import MedicalRecordsView from './pages/MedicalRecordsView';
 import NotFound from './pages/NotFound';
-import { Activity } from 'lucide-react';
 
-const ProtectedLayout = ({ children }) => {
+// Protected route wrapper — new pages include AppLayout internally
+const ProtectedRoute = ({ children }) => {
   const { user, loading } = useAuth();
-  const [showRoleSwitcher, setShowRoleSwitcher] = useState(false);
 
   if (loading) {
     return (
-      <div className="min-h-screen bg-slate-950 flex items-center justify-center text-cyan-400 text-sm font-semibold gap-2">
-        <Activity className="w-6 h-6 animate-spin" /> Initializing UHIS Application...
+      <div style={{
+        minHeight: "100vh",
+        display: "flex",
+        alignItems: "center",
+        justifyContent: "center",
+        background: "var(--color-surface, #F8FAFC)",
+        fontFamily: "'Inter', sans-serif",
+        fontSize: "0.875rem",
+        color: "#64748b",
+        gap: "0.5rem",
+      }}>
+        <span style={{ display: "inline-block", width: "16px", height: "16px", border: "2px solid #2563EB", borderTopColor: "transparent", borderRadius: "50%", animation: "spin 0.7s linear infinite" }} />
+        Initializing UHIS...
+        <style>{`@keyframes spin { to { transform: rotate(360deg); } }`}</style>
       </div>
     );
   }
@@ -35,63 +48,71 @@ const ProtectedLayout = ({ children }) => {
     return <Navigate to="/login" replace />;
   }
 
-  return (
-    <div className="min-h-screen bg-slate-950 flex flex-col font-sans">
-      <Navbar onOpenRoleSwitcher={() => setShowRoleSwitcher(true)} />
-      <div className="flex flex-1">
-        <Sidebar />
-        <main className="flex-1 p-4 md:p-6 lg:p-8 max-w-7xl mx-auto w-full custom-scrollbar overflow-y-auto">
-          {children}
-        </main>
-      </div>
-      <QuickRoleSwitcherModal isOpen={showRoleSwitcher} onClose={() => setShowRoleSwitcher(false)} />
-    </div>
-  );
-};
-
-const RoleBasedDefaultRedirect = () => {
-  const { user } = useAuth();
-  if (!user) return <Navigate to="/login" replace />;
-
-  switch (user.role) {
-    case 'SUPER_ADMIN': return <Navigate to="/admin-dashboard" replace />;
-    case 'HOSPITAL_ADMIN': return <Navigate to="/hospital-dashboard" replace />;
-    case 'DOCTOR': return <Navigate to="/doctor-dashboard" replace />;
-    case 'PATIENT': return <Navigate to="/patient-dashboard" replace />;
-    case 'LABORATORY': return <Navigate to="/lab-dashboard" replace />;
-    case 'PHARMACY': return <Navigate to="/pharmacy-dashboard" replace />;
-    case 'RECEPTIONIST': return <Navigate to="/reception-dashboard" replace />;
-    default: return <Navigate to="/patient-dashboard" replace />;
-  }
+  return children;
 };
 
 function App() {
   return (
-    <AuthProvider>
-      <Router>
-        <Routes>
-          {/* Public Authentication Routes */}
-          <Route path="/login" element={<Login />} />
-          <Route path="/register" element={<Register />} />
+    <ThemeProvider>
+      <ToastProvider>
+        <AuthProvider>
+          <DashboardPreferenceProvider>
+            <Router>
+              <Routes>
+                {/* Public Routes */}
+                <Route path="/" element={<LandingPage />} />
+                <Route path="/login" element={<Login />} />
+                <Route path="/register" element={<Register />} />
 
-          {/* Role Protected Portal Routes */}
-          <Route path="/" element={<ProtectedLayout><RoleBasedDefaultRedirect /></ProtectedLayout>} />
-          <Route path="/admin-dashboard" element={<ProtectedLayout><SuperAdminDashboard /></ProtectedLayout>} />
-          <Route path="/hospital-dashboard" element={<ProtectedLayout><HospitalAdminDashboard /></ProtectedLayout>} />
-          <Route path="/doctor-dashboard" element={<ProtectedLayout><DoctorDashboard /></ProtectedLayout>} />
-          <Route path="/patient-dashboard" element={<ProtectedLayout><PatientDashboard /></ProtectedLayout>} />
-          <Route path="/lab-dashboard" element={<ProtectedLayout><LabDashboard /></ProtectedLayout>} />
-          <Route path="/pharmacy-dashboard" element={<ProtectedLayout><PharmacyDashboard /></ProtectedLayout>} />
-          <Route path="/reception-dashboard" element={<ProtectedLayout><ReceptionistDashboard /></ProtectedLayout>} />
-          
-          {/* Shared Features */}
-          <Route path="/ai-suite" element={<ProtectedLayout><AISuiteView /></ProtectedLayout>} />
-          <Route path="/medical-timeline" element={<ProtectedLayout><MedicalRecordsView /></ProtectedLayout>} />
+                {/* Dashboard Selection */}
+                <Route path="/dashboard-selection" element={<ProtectedRoute><DashboardSelectionPage /></ProtectedRoute>} />
+                <Route path="/dashboard" element={<ProtectedRoute><DashboardSelectionPage /></ProtectedRoute>} />
 
-          <Route path="*" element={<NotFound />} />
-        </Routes>
-      </Router>
-    </AuthProvider>
+                {/* Patient */}
+                <Route path="/patient-dashboard" element={<ProtectedRoute><PatientDashboard /></ProtectedRoute>} />
+                <Route path="/patient" element={<ProtectedRoute><PatientDashboard /></ProtectedRoute>} />
+
+                {/* Doctor */}
+                <Route path="/doctor-dashboard" element={<ProtectedRoute><DoctorDashboard /></ProtectedRoute>} />
+                <Route path="/doctor" element={<ProtectedRoute><DoctorDashboard /></ProtectedRoute>} />
+
+                {/* Hospital Admin */}
+                <Route path="/hospital-dashboard" element={<ProtectedRoute><HospitalAdminDashboard /></ProtectedRoute>} />
+                <Route path="/hospital" element={<ProtectedRoute><HospitalAdminDashboard /></ProtectedRoute>} />
+
+                {/* Super Admin */}
+                <Route path="/admin-dashboard" element={<ProtectedRoute><SuperAdminDashboard /></ProtectedRoute>} />
+                <Route path="/superadmin" element={<ProtectedRoute><SuperAdminDashboard /></ProtectedRoute>} />
+                <Route path="/super-admin" element={<ProtectedRoute><SuperAdminDashboard /></ProtectedRoute>} />
+
+                {/* Lab */}
+                <Route path="/lab-dashboard" element={<ProtectedRoute><LabDashboard /></ProtectedRoute>} />
+                <Route path="/lab" element={<ProtectedRoute><LabDashboard /></ProtectedRoute>} />
+
+                {/* Pharmacy */}
+                <Route path="/pharmacy-dashboard" element={<ProtectedRoute><PharmacyDashboard /></ProtectedRoute>} />
+                <Route path="/pharmacy" element={<ProtectedRoute><PharmacyDashboard /></ProtectedRoute>} />
+
+                {/* Receptionist */}
+                <Route path="/reception-dashboard" element={<ProtectedRoute><ReceptionistDashboard /></ProtectedRoute>} />
+                <Route path="/reception" element={<ProtectedRoute><ReceptionistDashboard /></ProtectedRoute>} />
+                <Route path="/receptionist" element={<ProtectedRoute><ReceptionistDashboard /></ProtectedRoute>} />
+
+                {/* Shared Features */}
+                <Route path="/ai-suite" element={<ProtectedRoute><AISuiteView /></ProtectedRoute>} />
+                <Route path="/ai" element={<ProtectedRoute><AISuiteView /></ProtectedRoute>} />
+                <Route path="/medical-timeline" element={<ProtectedRoute><MedicalRecordsView /></ProtectedRoute>} />
+                <Route path="/records" element={<ProtectedRoute><MedicalRecordsView /></ProtectedRoute>} />
+                <Route path="/medical-records" element={<ProtectedRoute><MedicalRecordsView /></ProtectedRoute>} />
+
+                {/* 404 Fallback */}
+                <Route path="*" element={<NotFound />} />
+              </Routes>
+            </Router>
+          </DashboardPreferenceProvider>
+        </AuthProvider>
+      </ToastProvider>
+    </ThemeProvider>
   );
 }
 

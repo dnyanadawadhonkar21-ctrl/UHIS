@@ -1,225 +1,203 @@
-import React, { useState, useEffect } from 'react';
-import api from '../services/api';
-import StatCard from '../components/StatCard';
-import { Building2, Stethoscope, Users, ShieldAlert, Plus, ShieldCheck, Activity } from 'lucide-react';
-import { ResponsiveContainer, AreaChart, Area, XAxis, YAxis, Tooltip } from 'recharts';
+import React, { useState } from "react";
+import AppLayout from "../components/layout/AppLayout";
+import InstrumentPanel from "../components/ui/InstrumentPanel";
+import DataRow from "../components/ui/DataRow";
+import StatusCode from "../components/ui/StatusCode";
+import Button from "../components/ui/Button";
+import { useToast } from "../context/ToastContext";
 
-const SuperAdminDashboard = () => {
-  const [data, setData] = useState(null);
-  const [loading, setLoading] = useState(true);
-  const [showAddHospital, setShowAddHospital] = useState(false);
-  const [hospitalForm, setHospitalForm] = useState({
-    name: '',
-    address: '',
-    city: 'Bengaluru',
-    state: 'Karnataka',
-    contactNo: '',
-    email: '',
-  });
+const TABS = [
+  { id: "grid", label: "NETWORK GRID" },
+  { id: "onboarding", label: "ONBOARDING QUEUE" },
+  { id: "security", label: "SECURITY & AUDIT" },
+  { id: "api", label: "API HEALTH" },
+];
 
-  useEffect(() => {
-    fetchStats();
-  }, []);
+const HOSPITALS_PENDING = [
+  { id: "HOS-2026-0041", name: "Shree Ganesh Medical Centre", city: "Pune", beds: 120, submitted: "2026-08-28", status: "pending_review" },
+  { id: "HOS-2026-0038", name: "KC Hospital & Research", city: "Hyderabad", beds: 280, submitted: "2026-08-25", status: "pending_review" },
+  { id: "HOS-2026-0035", name: "Sunrise Multispeciality", city: "Bengaluru", beds: 180, submitted: "2026-08-20", status: "documents_pending" },
+];
 
-  const fetchStats = async () => {
-    try {
-      setLoading(true);
-      const res = await api.get('/admin/stats');
-      if (res.data.success) {
-        setData(res.data);
-      }
-    } catch (err) {
-      console.error('Failed to load admin stats:', err);
-    } finally {
-      setLoading(false);
-    }
-  };
+const AUDIT_LOG = [
+  { time: "2026-08-31 14:22", event: "BULK RECORD ACCESS", user: "DR-4421 · AIIMS Delhi", level: "warning" },
+  { time: "2026-08-31 13:15", event: "FAILED LOGIN × 5", user: "IP 203.193.45.22", level: "critical" },
+  { time: "2026-08-31 11:44", event: "API KEY ROTATED", user: "SA-001 · System Admin", level: "normal" },
+  { time: "2026-08-31 09:30", event: "HOSPITAL ONBOARDED", user: "SA-001 · System Admin", level: "info" },
+  { time: "2026-08-30 22:11", event: "SCHEDULED BACKUP", user: "SYSTEM", level: "normal" },
+];
 
-  const handleAddHospital = async (e) => {
-    e.preventDefault();
-    try {
-      await api.post('/admin/hospitals', hospitalForm);
-      setShowAddHospital(false);
-      fetchStats();
-    } catch (err) {
-      alert('Failed to onboard hospital.');
-    }
-  };
-
-  if (loading) {
-    return (
-      <div className="p-8 text-center text-slate-400 flex items-center justify-center gap-2">
-        <Activity className="w-6 h-6 text-cyan-400 animate-spin" /> Loading Super Admin Intelligence...
-      </div>
-    );
-  }
-
-  const chartData = [
-    { month: 'Jan', appointments: 120, auditEvents: 450 },
-    { month: 'Feb', appointments: 210, auditEvents: 720 },
-    { month: 'Mar', appointments: 340, auditEvents: 980 },
-    { month: 'Apr', appointments: 480, auditEvents: 1400 },
-    { month: 'May', appointments: 610, auditEvents: 1850 },
-    { month: 'Jun', appointments: 790, auditEvents: 2300 },
-  ];
+export default function SuperAdminDashboard() {
+  const toast = useToast();
+  const [activeTab, setActiveTab] = useState("grid");
 
   return (
-    <div className="space-y-6">
-      {/* Top Header */}
-      <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4">
-        <div>
-          <h2 className="text-2xl font-extrabold text-white flex items-center gap-2">
-            <ShieldCheck className="w-7 h-7 text-purple-400" /> Super Admin Control Portal
-          </h2>
-          <p className="text-xs text-slate-400">Global System Metrics, Security Audit Logs & Healthcare Onboarding</p>
-        </div>
+    <AppLayout tabs={TABS} activeTab={activeTab} onTabChange={setActiveTab}>
+      <div style={{ maxWidth: "1100px", margin: "0 auto" }}>
 
-        <button
-          onClick={() => setShowAddHospital(true)}
-          className="flex items-center gap-2 px-4 py-2.5 rounded-xl bg-gradient-to-r from-purple-600 to-indigo-600 text-white text-xs font-bold shadow-lg shadow-purple-500/20 hover:opacity-90 transition"
+        <div
+          style={{
+            display: "grid",
+            gridTemplateColumns: "repeat(4, 1fr)",
+            border: "1px solid var(--color-border)",
+            background: "var(--color-panel)",
+            borderRadius: "10px",
+            overflow: "hidden",
+            marginBottom: "1.75rem",
+          }}
         >
-          <Plus className="w-4 h-4" /> Onboard New Hospital
-        </button>
-      </div>
-
-      {/* KPI Cards */}
-      <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
-        <StatCard title="Onboarded Hospitals" value={data?.stats?.totalHospitals || 0} icon={Building2} color="purple" subtext="Multi-specialty centers" />
-        <StatCard title="Total Registered Doctors" value={data?.stats?.totalDoctors || 0} icon={Stethoscope} color="cyan" subtext="Verified licensed practitioners" />
-        <StatCard title="Total Patients (ABHA Ready)" value={data?.stats?.totalPatients || 0} icon={Users} color="emerald" subtext="Centralized health records" />
-        <StatCard title="Security Audit Logs" value={data?.stats?.totalAuditLogs || 0} icon={ShieldAlert} color="amber" subtext="Immutable event traces" />
-      </div>
-
-      {/* Analytics Chart & Hospitals List */}
-      <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
-        <div className="lg:col-span-2 glass-card p-6 rounded-2xl border border-slate-800 space-y-4">
-          <h3 className="text-sm font-bold text-white uppercase tracking-wider">Platform Growth & Activity Stream</h3>
-          <div className="h-64">
-            <ResponsiveContainer width="100%" height="100%">
-              <AreaChart data={chartData}>
-                <defs>
-                  <linearGradient id="colorAudit" x1="0" y1="0" x2="0" y2="1">
-                    <stop offset="5%" stopColor="#a855f7" stopOpacity={0.4} />
-                    <stop offset="95%" stopColor="#a855f7" stopOpacity={0} />
-                  </linearGradient>
-                </defs>
-                <XAxis dataKey="month" stroke="#64748b" fontSize={12} />
-                <YAxis stroke="#64748b" fontSize={12} />
-                <Tooltip contentStyle={{ backgroundColor: '#0f172a', borderColor: '#334155', borderRadius: '12px' }} />
-                <Area type="monotone" dataKey="auditEvents" stroke="#a855f7" fillOpacity={1} fill="url(#colorAudit)" />
-              </AreaChart>
-            </ResponsiveContainer>
-          </div>
+          {[
+            { label: "CONNECTED HOSPITALS", value: "847", signal: "normal" },
+            { label: "REGISTERED ABHA IDs", value: "10.2M", signal: "info" },
+            { label: "API CALLS TODAY", value: "3.1M", signal: "normal" },
+            { label: "PENDING ONBOARDING", value: "3", signal: "warning" },
+          ].map(({ label, value, signal }, i) => (
+            <div key={label} style={{ padding: "1.25rem", borderRight: i < 3 ? "1px solid var(--color-border)" : "none" }}>
+              <div className="type-label" style={{ marginBottom: "0.4rem" }}>{label}</div>
+              <div className="type-stat" style={{ color: signal === "muted" ? "var(--color-ink)" : `var(--color-signal-${signal})` }}>
+                {value}
+              </div>
+            </div>
+          ))}
         </div>
 
-        {/* Onboarded Hospitals */}
-        <div className="glass-card p-6 rounded-2xl border border-slate-800 space-y-4">
-          <h3 className="text-sm font-bold text-white uppercase tracking-wider">Registered Hospitals</h3>
-          <div className="space-y-3 max-h-64 overflow-y-auto custom-scrollbar">
-            {data?.hospitals?.map((h) => (
-              <div key={h.id} className="p-3 rounded-xl bg-slate-900 border border-slate-800 space-y-1">
-                <p className="font-semibold text-white text-xs">{h.name}</p>
-                <p className="text-[11px] text-slate-400">{h.city}, {h.state} | Code: <span className="font-mono text-cyan-400">{h.code}</span></p>
-                <p className="text-[10px] text-slate-500">Doctors: {h._count?.doctors} | Consultations: {h._count?.appointments}</p>
+        {activeTab === "grid" && (
+          <div className="fade-in sa-grid" style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: "1.25rem" }}>
+            <InstrumentPanel title="System Health" subtitle="LIVE MONITORING" channel="normal">
+              {[
+                { l: "API GATEWAY", v: "● OPERATIONAL", s: "normal" },
+                { l: "DATABASE CLUSTER (IN-WEST)", v: "● ONLINE · 4ms", s: "normal" },
+                { l: "DATABASE CLUSTER (IN-EAST)", v: "● ONLINE · 7ms", s: "normal" },
+                { l: "ABHA VERIFICATION SERVICE", v: "● ONLINE", s: "normal" },
+                { l: "NOTIFICATION BROKER", v: "◆ DEGRADED", s: "warning" },
+                { l: "PDF GENERATION SERVICE", v: "● ONLINE", s: "normal" },
+                { l: "BACKUP SERVICE", v: "● SCHEDULED 02:00", s: "info" },
+              ].map(({ l, v, s }) => (
+                <DataRow key={l} label={l} value={<span className={`status-${s}`}>{v}</span>} />
+              ))}
+            </InstrumentPanel>
+
+            <InstrumentPanel title="National Grid Statistics" subtitle="AGGREGATE METRICS" channel="info">
+              {[
+                { l: "STATES CONNECTED", v: "28 / 28" },
+                { l: "UNION TERRITORIES", v: "8 / 8" },
+                { l: "AYUSHMAN BHARAT FACILITIES", v: "12,441" },
+                { l: "PRIVATE HOSPITALS", v: "4,022" },
+                { l: "DIAGNOSTIC LABS", v: "8,831" },
+                { l: "PHARMACIES", v: "31,204" },
+                { l: "RECORDS CREATED TODAY", v: "1,204,318" },
+                { l: "API UPTIME (30 DAYS)", v: "99.97%" },
+              ].map(({ l, v }) => (
+                <DataRow key={l} label={l} value={v} />
+              ))}
+            </InstrumentPanel>
+          </div>
+        )}
+
+        {activeTab === "onboarding" && (
+          <div className="fade-in">
+            {HOSPITALS_PENDING.map((h) => (
+              <div
+                key={h.id}
+                className={`instrument-panel channel-${h.status === "documents_pending" ? "warning" : "info"}`}
+                style={{ marginBottom: "1px" }}
+              >
+                <div style={{ padding: "1rem 1.25rem", display: "flex", justifyContent: "space-between", gap: "1rem", flexWrap: "wrap", alignItems: "center" }}>
+                  <div>
+                    <div style={{ display: "flex", gap: "0.75rem", alignItems: "baseline", marginBottom: "0.3rem" }}>
+                      <span className="type-value" style={{ color: "var(--color-ink)", fontSize: "0.95rem" }}>{h.name}</span>
+                      <span className="type-id" style={{ color: "var(--color-ink-secondary)" }}>{h.id}</span>
+                    </div>
+                    <div style={{ display: "flex", gap: "1.25rem" }}>
+                      <span className="type-label" style={{ color: "var(--color-ink-secondary)" }}>CITY: {h.city}</span>
+                      <span className="type-label" style={{ color: "var(--color-ink-secondary)" }}>BEDS: {h.beds}</span>
+                      <span className="type-label" style={{ color: "var(--color-ink-secondary)" }}>SUBMITTED: {h.submitted}</span>
+                    </div>
+                  </div>
+                  <div style={{ display: "flex", gap: "0.5rem", alignItems: "center" }}>
+                    <StatusCode
+                      status={h.status === "documents_pending" ? "warning" : "info"}
+                      label={h.status.replace("_", " ").toUpperCase()}
+                    />
+                    <Button size="sm" onClick={() => toast.success(`${h.name} approved and onboarded.`)}>APPROVE</Button>
+                    <Button variant="secondary" size="sm" onClick={() => toast.warning(`${h.name} rejected.`)}>REJECT</Button>
+                  </div>
+                </div>
               </div>
             ))}
           </div>
-        </div>
-      </div>
+        )}
 
-      {/* Security Audit Logs */}
-      <div className="glass-card p-6 rounded-2xl border border-slate-800 space-y-4">
-        <h3 className="text-sm font-bold text-white uppercase tracking-wider flex items-center gap-2">
-          <ShieldAlert className="w-4 h-4 text-purple-400" /> Platform Audit Trail & Compliance Log
-        </h3>
-        <div className="overflow-x-auto custom-scrollbar">
-          <table className="w-full text-left text-xs text-slate-300">
-            <thead className="bg-slate-900 text-slate-400 uppercase text-[10px]">
-              <tr>
-                <th className="p-3">Timestamp</th>
-                <th className="p-3">User</th>
-                <th className="p-3">Action</th>
-                <th className="p-3">Target Resource</th>
-                <th className="p-3">Details</th>
-              </tr>
-            </thead>
-            <tbody className="divide-y divide-slate-800">
-              {data?.recentAuditLogs?.map((log) => (
-                <tr key={log.id} className="hover:bg-slate-800/50 transition">
-                  <td className="p-3 font-mono text-[11px] text-slate-400">{new Date(log.timestamp).toLocaleString()}</td>
-                  <td className="p-3 font-medium text-white">{log.user?.fullName || 'System User'}</td>
-                  <td className="p-3"><span className="px-2 py-0.5 rounded bg-purple-500/20 text-purple-300 border border-purple-500/30 text-[10px] font-bold">{log.action}</span></td>
-                  <td className="p-3 font-mono text-cyan-400">{log.resource}</td>
-                  <td className="p-3 text-slate-400 truncate max-w-xs">{log.details}</td>
-                </tr>
-              ))}
-            </tbody>
-          </table>
-        </div>
-      </div>
-
-      {/* Onboard Hospital Modal */}
-      {showAddHospital && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-slate-950/80 backdrop-blur-md">
-          <div className="w-full max-w-md glass-card p-6 rounded-2xl border border-slate-700 space-y-4">
-            <h3 className="font-bold text-white text-lg">Onboard Healthcare Institute</h3>
-            <form onSubmit={handleAddHospital} className="space-y-3 text-xs">
-              <input
-                type="text"
-                required
-                placeholder="Hospital Name (e.g. Manipal Super Specialty)"
-                value={hospitalForm.name}
-                onChange={(e) => setHospitalForm({ ...hospitalForm, name: e.target.value })}
-                className="w-full px-3 py-2 rounded-xl bg-slate-900 border border-slate-700 text-white"
-              />
-              <input
-                type="text"
-                required
-                placeholder="Address"
-                value={hospitalForm.address}
-                onChange={(e) => setHospitalForm({ ...hospitalForm, address: e.target.value })}
-                className="w-full px-3 py-2 rounded-xl bg-slate-900 border border-slate-700 text-white"
-              />
-              <div className="grid grid-cols-2 gap-2">
-                <input
-                  type="text"
-                  placeholder="City"
-                  value={hospitalForm.city}
-                  onChange={(e) => setHospitalForm({ ...hospitalForm, city: e.target.value })}
-                  className="w-full px-3 py-2 rounded-xl bg-slate-900 border border-slate-700 text-white"
-                />
-                <input
-                  type="text"
-                  placeholder="State"
-                  value={hospitalForm.state}
-                  onChange={(e) => setHospitalForm({ ...hospitalForm, state: e.target.value })}
-                  className="w-full px-3 py-2 rounded-xl bg-slate-900 border border-slate-700 text-white"
-                />
+        {activeTab === "security" && (
+          <div className="fade-in">
+            <div className="instrument-panel" style={{ overflow: "hidden" }}>
+              <div className="panel-header">
+                <div className="type-label" style={{ color: "var(--color-ink-secondary)", marginBottom: "0.15rem" }}>LAST 24 HOURS</div>
+                <div className="type-heading">Security Audit Log</div>
               </div>
-              <input
-                type="text"
-                placeholder="Contact Phone"
-                value={hospitalForm.contactNo}
-                onChange={(e) => setHospitalForm({ ...hospitalForm, contactNo: e.target.value })}
-                className="w-full px-3 py-2 rounded-xl bg-slate-900 border border-slate-700 text-white"
-              />
-              <input
-                type="email"
-                placeholder="Official Email"
-                value={hospitalForm.email}
-                onChange={(e) => setHospitalForm({ ...hospitalForm, email: e.target.value })}
-                className="w-full px-3 py-2 rounded-xl bg-slate-900 border border-slate-700 text-white"
-              />
-              <div className="flex justify-end gap-2 pt-2">
-                <button type="button" onClick={() => setShowAddHospital(false)} className="px-3 py-1.5 rounded-lg bg-slate-800 text-slate-300">Cancel</button>
-                <button type="submit" className="px-4 py-1.5 rounded-lg bg-purple-600 text-white font-bold">Submit</button>
-              </div>
-            </form>
+              <table style={{ width: "100%", borderCollapse: "collapse" }}>
+                <thead>
+                  <tr style={{ borderBottom: "1px solid var(--color-border)" }}>
+                    {["TIMESTAMP", "EVENT", "USER / SOURCE", "LEVEL"].map((h) => (
+                      <th key={h} className="type-label" style={{ padding: "0.6rem 1rem", textAlign: "left", color: "var(--color-ink-secondary)", background: "var(--color-surface)" }}>
+                        {h}
+                      </th>
+                    ))}
+                  </tr>
+                </thead>
+                <tbody>
+                  {AUDIT_LOG.map((a, i) => (
+                    <tr key={i} style={{ borderBottom: "1px solid var(--color-border)" }}>
+                      <td style={{ padding: "0.7rem 1rem" }}><span className="type-id" style={{ color: "var(--color-ink-muted)" }}>{a.time}</span></td>
+                      <td style={{ padding: "0.7rem 1rem" }}><span className="type-value" style={{ color: "var(--color-ink)", fontSize: "0.85rem" }}>{a.event}</span></td>
+                      <td style={{ padding: "0.7rem 1rem" }}><span className="type-body" style={{ color: "var(--color-ink-secondary)", fontSize: "0.8rem" }}>{a.user}</span></td>
+                      <td style={{ padding: "0.7rem 1rem" }}>
+                        <StatusCode status={a.level} label={a.level.toUpperCase()} />
+                      </td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
           </div>
-        </div>
-      )}
-    </div>
-  );
-};
+        )}
 
-export default SuperAdminDashboard;
+        {activeTab === "api" && (
+          <div className="fade-in sa-grid" style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: "1.25rem" }}>
+            <InstrumentPanel title="API Endpoint Health" subtitle="REAL-TIME" channel="normal">
+              {[
+                { endpoint: "POST /api/v2/auth/login", latency: "18ms", status: "normal" },
+                { endpoint: "GET /api/v2/records/:id", latency: "12ms", status: "normal" },
+                { endpoint: "POST /api/v2/prescription", latency: "34ms", status: "normal" },
+                { endpoint: "GET /api/v2/lab-reports", latency: "22ms", status: "normal" },
+                { endpoint: "POST /api/v2/abha/verify", latency: "89ms", status: "warning" },
+                { endpoint: "POST /api/v2/notifications", latency: "142ms", status: "warning" },
+              ].map((e) => (
+                <div key={e.endpoint} className="data-row">
+                  <span className="type-id" style={{ color: "var(--color-ink-secondary)", fontSize: "0.72rem" }}>{e.endpoint}</span>
+                  <span className="type-value" style={{ fontSize: "0.75rem", flexShrink: 0, color: `var(--color-signal-${e.status})`, fontWeight: 600 }}>
+                    {e.latency}
+                  </span>
+                </div>
+              ))}
+            </InstrumentPanel>
+            <InstrumentPanel title="Traffic Overview" subtitle="TODAY" channel="info">
+              {[
+                { l: "TOTAL API CALLS", v: "3,104,441" },
+                { l: "PEAK REQUESTS/SEC", v: "1,204" },
+                { l: "4XX ERRORS", v: "1,220 (0.04%)" },
+                { l: "5XX ERRORS", v: "12 (0.0004%)" },
+                { l: "CACHE HIT RATE", v: "87.3%" },
+                { l: "CDN EDGE NODES", v: "12 ACTIVE" },
+                { l: "RATE LIMITED REQUESTS", v: "440" },
+              ].map(({ l, v }) => (
+                <DataRow key={l} label={l} value={v} />
+              ))}
+            </InstrumentPanel>
+          </div>
+        )}
+      </div>
+      <style>{`@media (max-width: 900px) { .sa-grid { grid-template-columns: 1fr !important; } }`}</style>
+    </AppLayout>
+  );
+}

@@ -21,13 +21,95 @@ const getPatientProfile = async (req, res, next) => {
       where: { id: patientId },
       include: {
         user: { select: { fullName: true, email: true, phoneNumber: true } },
-        medicalRecords: { take: 5, orderBy: { recordDate: 'desc' } },
-        prescriptions: { take: 5, orderBy: { createdAt: 'desc' } },
-        labReports: { take: 5, orderBy: { createdAt: 'desc' } },
+        medicalRecords: { orderBy: { recordDate: 'desc' } },
+        prescriptions: { include: { items: true, doctor: { include: { user: true } } }, orderBy: { createdAt: 'desc' } },
+        labReports: { orderBy: { createdAt: 'desc' } },
+        diagnoses: { include: { doctor: { include: { user: true, hospital: true } } } },
       },
     });
 
-    res.status(200).json({ success: true, patient });
+    if (!patient) {
+      return res.status(404).json({ success: false, message: 'Patient profile not found.' });
+    }
+
+    const notifications = await prisma.notification.findMany({
+      where: { userId: patient.userId },
+      orderBy: { createdAt: 'desc' }
+    });
+
+    let allergies = [];
+    if (patient.allergies) {
+       try { allergies = JSON.parse(patient.allergies); } catch(e) { allergies = [{ id: 'a0', name: patient.allergies, category: 'OTHER', severity: 'MILD' }]; }
+    }
+
+    const diseases = patient.diagnoses.map(d => ({
+       id: d.id,
+       name: d.conditionName,
+       icdCode: d.icdCode,
+       diagnosedDate: d.diagnosedDate,
+       severity: d.severity,
+       status: 'ACTIVE',
+       treatingDoctor: d.doctor?.user?.fullName || 'General Physician',
+       hospital: d.doctor?.hospital?.name || 'Hospital',
+       notes: d.clinicalNotes
+    }));
+
+    const vaccinations = patient.medicalRecords
+       .filter(mr => mr.recordType === 'VACCINATION')
+       .map(mr => {
+          let extra = {};
+          try { extra = JSON.parse(mr.description); } catch(e) {}
+          return {
+             id: mr.id,
+             vaccine: extra.vaccine || mr.title,
+             dose: extra.dose || 'Unknown',
+             dateAdministered: mr.recordDate,
+             hospital: extra.hospital || 'Hospital',
+             batchNumber: extra.batchNumber || 'N/A',
+             nextDue: extra.nextDue,
+             status: extra.status || 'COMPLETED'
+          };
+       });
+
+    const medications = [];
+    patient.prescriptions.forEach(p => {
+       p.items.forEach(item => {
+          const startDate = new Date(p.createdAt);
+          const endDate = new Date(startDate);
+          endDate.setDate(endDate.getDate() + item.durationDays);
+          medications.push({
+             id: item.id,
+             name: item.medicineName,
+             dosage: item.dosage,
+             frequency: item.frequency,
+             startDate: startDate,
+             endDate: endDate.toLocaleDateString(),
+             prescribedBy: p.doctor?.user?.fullName || 'Doctor',
+             instructions: item.instructions
+          });
+       });
+    });
+
+    const alerts = notifications.map(n => ({
+       id: n.id,
+       type: n.type,
+       severity: n.type === 'ALLERGY_WARNING' ? 'CRITICAL' : n.type === 'VACCINE_DUE' ? 'WARNING' : 'INFO',
+       title: n.title,
+       message: n.message,
+       action: 'View Details'
+    }));
+
+    const patientData = {
+       patient,
+       diseases,
+       allergies,
+       vaccinations,
+       medications,
+       labReports: patient.labReports,
+       alerts
+    };
+
+    res.status(200).json({ success: true, patientData });
   } catch (error) {
     next(error);
   }
@@ -207,26 +289,34 @@ const cancelAppointment = async (req, res, next) => {
   }
 };
 
-// Update Emergency Contact & Health Alerts
-const updateEmergencyContacts = async (req, res, next) => {
+// Update Patient Profile
+const updatePatientProfile = async (req, res, next) => {
   try {
-    const { emergencyContact, emergencyPhone, allergies, chronicConditions, bloodGroup } = req.body;
+    const { address, phoneNumber, height, weight, emergencyContact, emergencyPhone, bloodGroup } = req.body;
 
-    const patient = await prisma.patient.findUnique({ where: { userId: req.user.id } });
+    const patient = await prisma.patient.findUnique({ where: { userId: req.user.id }, include: { user: true } });
     if (!patient) return res.status(404).json({ success: false, message: 'Patient not found.' });
 
     const updated = await prisma.patient.update({
       where: { id: patient.id },
       data: {
+        address,
+        height,
+        weight,
         emergencyContact,
         emergencyPhone,
-        allergies,
-        chronicConditions,
         bloodGroup,
       },
     });
 
-    res.status(200).json({ success: true, message: 'Health details updated.', patient: updated });
+    if (phoneNumber && phoneNumber !== patient.user.phoneNumber) {
+      await prisma.user.update({
+        where: { id: req.user.id },
+        data: { phoneNumber }
+      });
+    }
+
+    res.status(200).json({ success: true, message: 'Profile updated successfully.', patient: updated });
   } catch (error) {
     next(error);
   }
@@ -237,5 +327,5 @@ module.exports = {
   getUnifiedTimeline,
   bookAppointment,
   cancelAppointment,
-  updateEmergencyContacts,
+  updatePatientProfile,
 };

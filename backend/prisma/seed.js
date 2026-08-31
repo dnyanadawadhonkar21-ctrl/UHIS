@@ -3,8 +3,77 @@ const bcrypt = require('bcrypt');
 
 const prisma = new PrismaClient();
 
+// --- DATA ARRAYS FOR PROCEDURAL GENERATION ---
+
+const firstNamesM = ['Rahul', 'Amit', 'Vikram', 'Suresh', 'Ramesh', 'Arjun', 'Karan', 'Aditya', 'Rohan', 'Vishal', 'Sanjay', 'Prakash', 'Anil', 'Sunil', 'Rajesh', 'Manish', 'Nitin', 'Vivek', 'Sachin', 'Deepak', 'Gaurav', 'Tarun', 'Prashant', 'Ashish', 'Ravi'];
+const firstNamesF = ['Priya', 'Ananya', 'Sneha', 'Neha', 'Pooja', 'Kavita', 'Sunita', 'Anita', 'Riya', 'Aisha', 'Divya', 'Swati', 'Meera', 'Ritu', 'Nisha', 'Aarti', 'Kiran', 'Meena', 'Shweta', 'Pallavi', 'Rashmi', 'Jyoti', 'Shilpa', 'Vandana', 'Preeti'];
+const lastNames = ['Sharma', 'Verma', 'Kumar', 'Singh', 'Patel', 'Reddy', 'Rao', 'Iyer', 'Deshmukh', 'Joshi', 'Chopra', 'Kapoor', 'Das', 'Sen', 'Nair', 'Menon', 'Gupta', 'Mishra', 'Tiwari', 'Pandey', 'Yadav', 'Chauhan', 'Thakur', 'Bhat', 'Kulkarni'];
+const bloodGroups = ['A+', 'A-', 'B+', 'B-', 'AB+', 'AB-', 'O+', 'O-'];
+const cities = ['Bengaluru', 'Mumbai', 'New Delhi', 'Chennai', 'Hyderabad', 'Pune', 'Kolkata', 'Ahmedabad'];
+
+const specializations = [
+  { dept: 'Cardiology', spec: 'Cardiologist', prefix: 'Cardio' },
+  { dept: 'Neurology', spec: 'Neurologist', prefix: 'Neuro' },
+  { dept: 'Orthopedics', spec: 'Orthopedic Surgeon', prefix: 'Ortho' },
+  { dept: 'Pediatrics', spec: 'Pediatrician', prefix: 'Pedia' },
+  { dept: 'Oncology', spec: 'Oncologist', prefix: 'Onco' },
+  { dept: 'Endocrinology', spec: 'Endocrinologist', prefix: 'Endo' },
+  { dept: 'Gastroenterology', spec: 'Gastroenterologist', prefix: 'Gastro' },
+  { dept: 'Dermatology', spec: 'Dermatologist', prefix: 'Derma' },
+  { dept: 'Psychiatry', spec: 'Psychiatrist', prefix: 'Psych' },
+  { dept: 'General Medicine', spec: 'General Physician', prefix: 'GenMed' },
+];
+
+const conditions = [
+  { name: 'Type II Diabetes Mellitus', icd: 'E11', severity: 'MODERATE' },
+  { name: 'Essential Hypertension', icd: 'I10', severity: 'MILD' },
+  { name: 'Asthma', icd: 'J45', severity: 'MODERATE' },
+  { name: 'Pulmonary Tuberculosis', icd: 'A15', severity: 'SEVERE' },
+  { name: 'Dengue Fever', icd: 'A90', severity: 'SEVERE' },
+  { name: 'Malaria (Plasmodium falciparum)', icd: 'B50', severity: 'SEVERE' },
+  { name: 'Typhoid Fever', icd: 'A01.0', severity: 'MODERATE' },
+  { name: 'Migraine without Aura', icd: 'G43.0', severity: 'MILD' },
+  { name: 'Iron Deficiency Anemia', icd: 'D50', severity: 'MILD' },
+  { name: 'Osteoarthritis of Knee', icd: 'M17', severity: 'MODERATE' }
+];
+
+const medicines = [
+  { name: 'Paracetamol 650mg', category: 'ANALGESIC', brand: 'Dolo 650', dose: '650mg' },
+  { name: 'Telmisartan 40mg', category: 'CARDIAC', brand: 'Telma 40', dose: '40mg' },
+  { name: 'Metformin 500mg', category: 'ANTI-DIABETIC', brand: 'Glycomet', dose: '500mg' },
+  { name: 'Atorvastatin 10mg', category: 'CARDIAC', brand: 'Lipvas', dose: '10mg' },
+  { name: 'Amoxicillin 500mg', category: 'ANTIBIOTIC', brand: 'Novamox', dose: '500mg' },
+  { name: 'Pantoprazole 40mg', category: 'ANTACID', brand: 'Pan 40', dose: '40mg' },
+  { name: 'Cetirizine 10mg', category: 'ANTIHISTAMINE', brand: 'Cetzine', dose: '10mg' },
+  { name: 'Azithromycin 500mg', category: 'ANTIBIOTIC', brand: 'Azithral', dose: '500mg' }
+];
+
+const allergiesList = [
+  { name: 'Penicillin', cat: 'MEDICINE', sev: 'SEVERE', sym: 'Anaphylaxis, hives' },
+  { name: 'Dust Mites', cat: 'ENVIRONMENTAL', sev: 'MODERATE', sym: 'Sneezing, asthma' },
+  { name: 'Peanuts', cat: 'FOOD', sev: 'SEVERE', sym: 'Throat swelling' },
+  { name: 'Pollen', cat: 'ENVIRONMENTAL', sev: 'MILD', sym: 'Runny nose' },
+  { name: 'Sulfa Drugs', cat: 'MEDICINE', sev: 'MODERATE', sym: 'Skin rash' }
+];
+
+const vaccinesList = ['COVID-19 (Covishield)', 'Hepatitis B', 'Influenza (Flu Shot)', 'Tetanus Toxoid', 'Typhoid (Vi)'];
+const labTests = [
+  { name: 'Complete Blood Count (CBC)', cat: 'BLOOD' },
+  { name: 'Lipid Profile', cat: 'BLOOD' },
+  { name: 'HbA1c', cat: 'BLOOD' },
+  { name: 'Thyroid Function Test', cat: 'BLOOD' },
+  { name: 'Urine Routine', cat: 'URINE' },
+  { name: 'Chest X-Ray', cat: 'RADIOLOGY' }
+];
+
+// --- HELPER FUNCTIONS ---
+const randomElement = (arr) => arr[Math.floor(Math.random() * arr.length)];
+const randomInt = (min, max) => Math.floor(Math.random() * (max - min + 1)) + min;
+const randomPhone = () => `+91 ${randomInt(7000000000, 9999999999)}`;
+const randomDate = (start, end) => new Date(start.getTime() + Math.random() * (end.getTime() - start.getTime()));
+
 async function main() {
-  console.log('🌱 Starting UHIS Production Database Seed process...');
+  console.log('🌱 Starting Large-Scale UHIS Production Database Seed process...');
 
   // Clean existing tables (in order of relations)
   await prisma.auditLog.deleteMany();
@@ -30,452 +99,232 @@ async function main() {
   const commonPassword = await bcrypt.hash('password123', 10);
 
   // 1. Super Admin
-  const superAdmin = await prisma.user.create({
-    data: {
-      fullName: 'Dr. Rajesh V. Kurup',
-      email: 'admin@uhis.org',
-      password: commonPassword,
-      role: 'SUPER_ADMIN',
-      phoneNumber: '+91 98765 00001',
-    },
+  await prisma.user.create({
+    data: { fullName: 'System Administrator', email: 'admin@uhis.org', password: commonPassword, role: 'SUPER_ADMIN', phoneNumber: '+91 9999900000' },
   });
 
-  // 2. Hospital & Hospital Admin
-  const hospitalAdminUser = await prisma.user.create({
-    data: {
-      fullName: 'Vikramaditya Rao',
-      email: 'hospitaladmin@apollo.org',
-      password: commonPassword,
-      role: 'HOSPITAL_ADMIN',
-      phoneNumber: '+91 98765 00002',
-    },
-  });
+  // 2. Base Infrastructure (5 Hospitals, 5 Labs, 5 Pharmacies)
+  const hospitals = [];
+  const labs = [];
+  const pharmacies = [];
+  const depts = [];
 
-  const apolloHospital = await prisma.hospital.create({
-    data: {
-      name: 'Apollo Multi-Specialty Super Hospital',
-      code: 'APOLLO-BLR-01',
-      address: '154/11, Bannerghatta Main Rd, Opposite IIM-B',
-      city: 'Bengaluru',
-      state: 'Karnataka',
-      contactNo: '+91 80 2630 4050',
-      email: 'info@apollo-blr.org',
-      website: 'https://apollo-uhis.org',
-    },
-  });
+  for (let i = 1; i <= 5; i++) {
+    // Hospital
+    const hUser = await prisma.user.create({
+      data: { fullName: `Admin Hospital ${i}`, email: `admin.hospital${i}@uhis.org`, password: commonPassword, role: 'HOSPITAL_ADMIN', phoneNumber: randomPhone() }
+    });
+    const hospital = await prisma.hospital.create({
+      data: { name: `Apollo / Fortis Branch ${i}`, code: `HOSP-${i}`, address: `Street ${i}, Main Road`, city: randomElement(cities), state: 'State', contactNo: randomPhone(), email: `info@hosp${i}.org`, website: `https://hosp${i}.org` }
+    });
+    hospitals.push(hospital);
 
-  // Departments
-  const cardioDept = await prisma.department.create({
-    data: {
-      hospitalId: apolloHospital.id,
-      name: 'Cardiology & Vascular Surgery',
-      description: 'Advanced interventional cardiology and cardiac surgery unit.',
-    },
-  });
+    // Departments for this hospital
+    for (const spec of specializations) {
+      const dept = await prisma.department.create({
+        data: { hospitalId: hospital.id, name: spec.dept, description: `${spec.dept} Department` }
+      });
+      depts.push(dept);
+    }
 
-  const neuroDept = await prisma.department.create({
-    data: {
-      hospitalId: apolloHospital.id,
-      name: 'Neurology & Brain Sciences',
-      description: 'Comprehensive stroke, epilepsy, and neurodegenerative care.',
-    },
-  });
+    // Lab
+    const lUser = await prisma.user.create({
+      data: { fullName: `Lab Admin ${i}`, email: `lab${i}@uhis.org`, password: commonPassword, role: 'LABORATORY', phoneNumber: randomPhone() }
+    });
+    const lab = await prisma.laboratory.create({
+      data: { userId: lUser.id, labName: `Central Diagnostic Lab ${i}`, licenseNo: `LAB-LIC-${i}`, contactNo: randomPhone(), address: `Block ${i}` }
+    });
+    labs.push(lab);
 
-  // 3. Doctors
-  const doctorUser1 = await prisma.user.create({
-    data: {
-      fullName: 'Dr. Suresh Sharma',
-      email: 'dr.sharma@apollo.org',
-      password: commonPassword,
-      role: 'DOCTOR',
-      phoneNumber: '+91 98765 00003',
-    },
-  });
+    // Pharmacy
+    const pUser = await prisma.user.create({
+      data: { fullName: `Pharmacy Admin ${i}`, email: `pharmacy${i}@uhis.org`, password: commonPassword, role: 'PHARMACY', phoneNumber: randomPhone() }
+    });
+    const pharmacy = await prisma.pharmacy.create({
+      data: { userId: pUser.id, pharmacyName: `24x7 Digital Pharmacy ${i}`, licenseNo: `PHARM-LIC-${i}`, contactNo: randomPhone(), address: `Campus ${i}` }
+    });
+    pharmacies.push(pharmacy);
+  }
 
-  const doctor1 = await prisma.doctor.create({
-    data: {
-      userId: doctorUser1.id,
-      hospitalId: apolloHospital.id,
-      departmentId: cardioDept.id,
-      specialization: 'Senior Consultant Cardiologist',
-      licenseNumber: 'MCI-KAR-2012-9843',
-      qualification: 'MBBS, MD (Medicine), DM (Cardiology)',
-      experienceYears: 16,
-      consultationFee: 800.0,
-      availableDays: 'Mon, Wed, Fri',
-      timeSlot: '09:00 AM - 01:00 PM',
-    },
-  });
+  // 3. Generate 100 Doctors
+  console.log('👨‍⚕️ Generating 100 Doctors...');
+  const doctors = [];
+  for (let i = 1; i <= 100; i++) {
+    const isMale = Math.random() > 0.5;
+    const fName = randomElement(isMale ? firstNamesM : firstNamesF);
+    const lName = randomElement(lastNames);
+    const spec = randomElement(specializations);
+    const hosp = randomElement(hospitals);
+    // Find matching dept in this hosp
+    const dept = depts.find(d => d.hospitalId === hosp.id && d.name === spec.dept);
 
-  const doctorUser2 = await prisma.user.create({
-    data: {
-      fullName: 'Dr. Ananya Deshmukh',
-      email: 'dr.ananya@apollo.org',
-      password: commonPassword,
-      role: 'DOCTOR',
-      phoneNumber: '+91 98765 00004',
-    },
-  });
+    const docUser = await prisma.user.create({
+      data: { fullName: `Dr. ${fName} ${lName}`, email: `doctor${i}@uhis.org`, password: commonPassword, role: 'DOCTOR', phoneNumber: randomPhone() }
+    });
 
-  const doctor2 = await prisma.doctor.create({
-    data: {
-      userId: doctorUser2.id,
-      hospitalId: apolloHospital.id,
-      departmentId: neuroDept.id,
-      specialization: 'Neuro-Physician',
-      licenseNumber: 'MCI-KAR-2015-4421',
-      qualification: 'MBBS, DNB (Neurology)',
-      experienceYears: 10,
-      consultationFee: 700.0,
-      availableDays: 'Tue, Thu, Sat',
-      timeSlot: '02:00 PM - 06:00 PM',
-    },
-  });
+    const doc = await prisma.doctor.create({
+      data: {
+        userId: docUser.id,
+        hospitalId: hosp.id,
+        departmentId: dept.id,
+        specialization: spec.spec,
+        licenseNumber: `MCI-${randomInt(1000, 9999)}`,
+        qualification: 'MBBS, MD',
+        experienceYears: randomInt(2, 30),
+        consultationFee: randomElement([500, 700, 800, 1000, 1200]),
+      }
+    });
+    doctors.push({ ...doc, user: docUser });
+  }
 
-  // 4. Patient (ABHA Identity Ready)
-  const patientUser = await prisma.user.create({
-    data: {
-      fullName: 'Rahul K. Verma',
-      email: 'patient.rahul@gmail.com',
-      password: commonPassword,
-      role: 'PATIENT',
-      phoneNumber: '+91 98765 00005',
-    },
-  });
+  // 4. Generate 100 Patients with full medical histories
+  console.log('🤒 Generating 100 Patients and their medical records...');
+  for (let i = 1; i <= 100; i++) {
+    const isMale = Math.random() > 0.5;
+    const fName = randomElement(isMale ? firstNamesM : firstNamesF);
+    const lName = randomElement(lastNames);
+    
+    const patUser = await prisma.user.create({
+      data: { fullName: `${fName} ${lName}`, email: `patient${i}@uhis.org`, password: commonPassword, role: 'PATIENT', phoneNumber: randomPhone() }
+    });
 
-  const patient = await prisma.patient.create({
-    data: {
-      userId: patientUser.id,
-      abhaId: '91-4820-3941-8890',
-      gender: 'MALE',
-      dateOfBirth: new Date('1996-08-14'),
-      bloodGroup: 'O+',
-      address: 'Flat 402, Green Glen Layout, Bellandur, Bengaluru',
-      emergencyContact: 'Sunita Verma (Mother)',
-      emergencyPhone: '+91 98765 99999',
-      allergies: 'Penicillin, Dust Mites',
-      chronicConditions: 'Mild Essential Hypertension',
-    },
-  });
+    // Generate random allergies
+    const patAllergies = [];
+    if (Math.random() > 0.7) { // 30% have allergies
+      const numAllergies = randomInt(1, 2);
+      for (let j = 0; j < numAllergies; j++) {
+        const al = randomElement(allergiesList);
+        if (!patAllergies.find(a => a.name === al.name)) {
+          patAllergies.push({ id: `a${j}`, name: al.name, category: al.cat, severity: al.sev, symptoms: al.sym, dateRecorded: randomDate(new Date('2015-01-01'), new Date()).toISOString(), precautions: 'Avoid exposure' });
+        }
+      }
+    }
 
-  // 5. Laboratory
-  const labUser = await prisma.user.create({
-    data: {
-      fullName: 'MetroDiagnostics Central Lab',
-      email: 'lab.metro@uhis.org',
-      password: commonPassword,
-      role: 'LABORATORY',
-      phoneNumber: '+91 98765 00006',
-    },
-  });
+    const patient = await prisma.patient.create({
+      data: {
+        userId: patUser.id,
+        abhaId: `91-${randomInt(1000, 9999)}-${randomInt(1000, 9999)}-${randomInt(1000, 9999)}`,
+        gender: isMale ? 'MALE' : 'FEMALE',
+        dateOfBirth: randomDate(new Date('1950-01-01'), new Date('2010-12-31')),
+        bloodGroup: randomElement(bloodGroups),
+        address: `Flat ${randomInt(100, 999)}, Sector ${randomInt(1, 20)}, ${randomElement(cities)}`,
+        emergencyContact: `${randomElement(firstNamesM)} ${lName}`,
+        emergencyPhone: randomPhone(),
+        allergies: patAllergies.length > 0 ? JSON.stringify(patAllergies) : null,
+      }
+    });
 
-  const lab = await prisma.laboratory.create({
-    data: {
-      userId: labUser.id,
-      labName: 'MetroDiagnostics NABL Certified Lab',
-      licenseNo: 'NABL-LAB-8832-2024',
-      contactNo: '+91 80 4112 3344',
-      address: '22, Koramangala 8th Block, Bengaluru',
-    },
-  });
+    // Diagnoses (0 to 3 conditions)
+    const numCond = randomInt(0, 3);
+    for (let c = 0; c < numCond; c++) {
+      const cond = randomElement(conditions);
+      const doc = randomElement(doctors);
+      await prisma.diagnosis.create({
+        data: {
+          patientId: patient.id,
+          doctorId: doc.id,
+          icdCode: cond.icd,
+          conditionName: cond.name,
+          severity: cond.severity,
+          diagnosedDate: randomDate(new Date('2018-01-01'), new Date()),
+        }
+      });
+    }
 
-  // 6. Pharmacy
-  const pharmacyUser = await prisma.user.create({
-    data: {
-      fullName: 'CityMed 24x7 Digital Pharmacy',
-      email: 'pharmacy.city@uhis.org',
-      password: commonPassword,
-      role: 'PHARMACY',
-      phoneNumber: '+91 98765 00007',
-    },
-  });
+    // Vaccinations (1 to 4)
+    const numVacc = randomInt(1, 4);
+    for (let v = 0; v < numVacc; v++) {
+      const vName = randomElement(vaccinesList);
+      await prisma.medicalRecord.create({
+        data: {
+          patientId: patient.id,
+          recordType: 'VACCINATION',
+          title: vName,
+          description: JSON.stringify({ vaccine: vName, dose: 'Standard', hospital: `Clinic ${randomElement(cities)}`, batchNumber: `B-${randomInt(1000,9999)}`, nextDue: null, status: 'COMPLETED' }),
+          recordDate: randomDate(new Date('2010-01-01'), new Date()),
+        }
+      });
+    }
 
-  const pharmacy = await prisma.pharmacy.create({
-    data: {
-      userId: pharmacyUser.id,
-      pharmacyName: 'CityMed 24x7 Digital Pharmacy',
-      licenseNo: 'KA-DRUG-LIC-9901',
-      contactNo: '+91 80 4999 1111',
-      address: 'Retail Block A, Apollo Hospital Campus, Bengaluru',
-    },
-  });
+    // Appointments & Prescriptions (1 to 3)
+    const numAppt = randomInt(1, 3);
+    for (let a = 0; a < numAppt; a++) {
+      const doc = randomElement(doctors);
+      const apptDate = randomDate(new Date('2025-01-01'), new Date('2026-12-31'));
+      const status = apptDate > new Date() ? 'CONFIRMED' : 'COMPLETED';
 
-  // 7. Receptionist
-  const receptionistUser = await prisma.user.create({
-    data: {
-      fullName: 'Pria Nambiar',
-      email: 'receptionist.pria@apollo.org',
-      password: commonPassword,
-      role: 'RECEPTIONIST',
-      phoneNumber: '+91 98765 00008',
-    },
-  });
+      const appt = await prisma.appointment.create({
+        data: {
+          patientId: patient.id,
+          doctorId: doc.id,
+          hospitalId: doc.hospitalId,
+          appointmentDate: apptDate,
+          timeSlot: '10:00 AM',
+          status: status,
+        }
+      });
 
-  // --- POPULATE MEDICAL RECORDS & TIMELINE ---
+      if (status === 'COMPLETED') {
+        const presc = await prisma.prescription.create({
+          data: {
+            appointmentId: appt.id,
+            patientId: patient.id,
+            doctorId: doc.id,
+            diagnosisText: 'Routine checkup and diagnosis.',
+            validUntil: new Date(apptDate.getTime() + 30 * 24 * 60 * 60 * 1000),
+            createdAt: apptDate,
+          }
+        });
 
-  // Appointments
-  const appt1 = await prisma.appointment.create({
-    data: {
-      patientId: patient.id,
-      doctorId: doctor1.id,
-      hospitalId: apolloHospital.id,
-      appointmentDate: new Date('2026-07-10T10:30:00Z'),
-      timeSlot: '10:30 AM',
-      reason: 'Chest discomfort & palpitation after mild exertion.',
-      status: 'COMPLETED',
-      notes: 'ECG normal, advised Lipid Profile and Echo.',
-    },
-  });
+        // 1-2 Meds
+        const numMeds = randomInt(1, 2);
+        for(let m = 0; m < numMeds; m++) {
+           const med = randomElement(medicines);
+           await prisma.prescriptionItem.create({
+             data: {
+               prescriptionId: presc.id,
+               medicineName: med.name,
+               dosage: med.dose,
+               frequency: '1-0-1',
+               durationDays: randomInt(5, 30),
+             }
+           });
+        }
+      }
+    }
 
-  const appt2 = await prisma.appointment.create({
-    data: {
-      patientId: patient.id,
-      doctorId: doctor2.id,
-      hospitalId: apolloHospital.id,
-      appointmentDate: new Date('2026-07-28T14:30:00Z'),
-      timeSlot: '02:30 PM',
-      reason: 'Follow-up consultation for periodic headache.',
-      status: 'CONFIRMED',
-      notes: 'Upcoming appointment.',
-    },
-  });
+    // Lab Reports (0 to 3)
+    const numLabs = randomInt(0, 3);
+    for (let l = 0; l < numLabs; l++) {
+      const test = randomElement(labTests);
+      const labFac = randomElement(labs);
+      await prisma.labReport.create({
+        data: {
+          laboratoryId: labFac.id,
+          patientId: patient.id,
+          testName: test.name,
+          testCategory: test.cat,
+          status: 'COMPLETED',
+          resultData: JSON.stringify({ result: 'Within normal limits' }),
+          sampleDate: randomDate(new Date('2025-01-01'), new Date()),
+        }
+      });
+    }
 
-  // Prescription & Items
-  const presc1 = await prisma.prescription.create({
-    data: {
-      appointmentId: appt1.id,
-      patientId: patient.id,
-      doctorId: doctor1.id,
-      diagnosisText: 'Grade I Hypertension & Exercise Induced Palpitation',
-      advice: 'Reduce dietary sodium (<2g/day). Perform 30 min daily brisk walking.',
-      validUntil: new Date('2026-08-30'),
-      items: {
-        create: [
-          {
-            medicineName: 'Telmisartan',
-            dosage: '40mg',
-            frequency: '1-0-0 (Morning after breakfast)',
-            durationDays: 30,
-            instructions: 'Monitor BP weekly.',
-          },
-          {
-            medicineName: 'Atorvastatin',
-            dosage: '10mg',
-            frequency: '0-0-1 (Night before sleep)',
-            durationDays: 30,
-            instructions: 'Take continuously.',
-          },
-        ],
-      },
-    },
-  });
+    // Notifications (Health Alerts)
+    if (patAllergies.length > 0) {
+       await prisma.notification.create({
+         data: {
+           userId: patUser.id,
+           title: 'Allergy Warning',
+           message: `You have severe allergies listed. Stay safe.`,
+           type: 'ALLERGY_WARNING',
+         }
+       });
+    }
+  }
 
-  // Diagnoses
-  await prisma.diagnosis.create({
-    data: {
-      patientId: patient.id,
-      doctorId: doctor1.id,
-      icdCode: 'I10',
-      conditionName: 'Essential (Primary) Hypertension',
-      severity: 'MILD',
-      clinicalNotes: 'Blood pressure recorded at 138/88 mmHg.',
-    },
-  });
-
-  // Lab Reports
-  await prisma.labReport.create({
-    data: {
-      laboratoryId: lab.id,
-      patientId: patient.id,
-      testName: 'Lipid Profile & Fasting Blood Sugar',
-      testCategory: 'BLOOD',
-      status: 'COMPLETED',
-      resultData: JSON.stringify({
-        totalCholesterol: '210 mg/dL (High)',
-        hdl: '45 mg/dL',
-        ldl: '135 mg/dL',
-        triglycerides: '150 mg/dL',
-        fastingGlucose: '98 mg/dL',
-      }),
-      remarks: 'Mild elevation in total cholesterol and LDL. Dietary control advised.',
-    },
-  });
-
-  await prisma.labReport.create({
-    data: {
-      laboratoryId: lab.id,
-      patientId: patient.id,
-      testName: '2D Echocardiogram & Color Doppler',
-      testCategory: 'RADIOLOGY',
-      status: 'COMPLETED',
-      resultData: JSON.stringify({
-        ejectionFraction: '62% (Normal)',
-        valvularFunction: 'Normal mitral and aortic valves.',
-        leftVentricle: 'Normal wall motion.',
-      }),
-      remarks: 'Normal cardiac structure and systolic function.',
-    },
-  });
-
-  // Medical Record Entries (Unified Timeline)
-  await prisma.medicalRecord.create({
-    data: {
-      patientId: patient.id,
-      doctorId: doctor1.id,
-      recordType: 'CONSULTATION',
-      title: 'Cardiology Initial OPD Consultation',
-      description: 'Patient presented with chest tightness. Cardiac examination within normal limits.',
-      recordDate: new Date('2026-07-10'),
-    },
-  });
-
-  await prisma.medicalRecord.create({
-    data: {
-      patientId: patient.id,
-      recordType: 'VACCINATION',
-      title: 'Hepatitis B Booster Dose',
-      description: 'Completed 3-dose Hepatitis B primary vaccination series.',
-      recordDate: new Date('2025-11-20'),
-    },
-  });
-
-  await prisma.medicalRecord.create({
-    data: {
-      patientId: patient.id,
-      recordType: 'SURGERY',
-      title: 'Laparoscopic Appendectomy',
-      description: 'Uneventful surgery performed at Manipal Hospital. Full recovery.',
-      recordDate: new Date('2023-04-15'),
-    },
-  });
-
-  // Pharmacy Medicines Inventory
-  await prisma.medicine.createMany({
-    data: [
-      {
-        pharmacyId: pharmacy.id,
-        name: 'Telmisartan 40mg',
-        genericName: 'Telmisartan',
-        brand: 'Telmikind',
-        category: 'CARDIAC',
-        unitPrice: 8.5,
-        stockQuantity: 450,
-        expiryDate: new Date('2027-12-31'),
-      },
-      {
-        pharmacyId: pharmacy.id,
-        name: 'Atorvastatin 10mg',
-        genericName: 'Atorvastatin',
-        brand: 'Lipvas',
-        category: 'CARDIAC',
-        unitPrice: 12.0,
-        stockQuantity: 300,
-        expiryDate: new Date('2027-10-30'),
-      },
-      {
-        pharmacyId: pharmacy.id,
-        name: 'Amoxicillin 500mg',
-        genericName: 'Amoxicillin',
-        brand: 'Mox 500',
-        category: 'ANTIBIOTIC',
-        unitPrice: 15.0,
-        stockQuantity: 500,
-        expiryDate: new Date('2027-06-30'),
-      },
-      {
-        pharmacyId: pharmacy.id,
-        name: 'Paracetamol 650mg',
-        genericName: 'Paracetamol',
-        brand: 'Dolo 650',
-        category: 'ANALGESIC',
-        unitPrice: 2.5,
-        stockQuantity: 1200,
-        expiryDate: new Date('2028-01-01'),
-      },
-    ],
-  });
-
-  // Dispense Record
-  await prisma.dispenseRecord.create({
-    data: {
-      pharmacyId: pharmacy.id,
-      prescriptionId: presc1.id,
-      patientId: patient.id,
-      status: 'DISPENSED',
-      totalCost: 615.0,
-    },
-  });
-
-  // Billing & Payment
-  const bill = await prisma.billing.create({
-    data: {
-      hospitalId: apolloHospital.id,
-      patientId: patient.id,
-      invoiceNumber: 'INV-2026-8841',
-      amount: 800.0,
-      taxAmount: 40.0,
-      discount: 0.0,
-      totalAmount: 840.0,
-      status: 'PAID',
-      dueDate: new Date('2026-07-15'),
-    },
-  });
-
-  await prisma.payment.create({
-    data: {
-      billingId: bill.id,
-      amount: 840.0,
-      paymentMode: 'UPI',
-      transactionId: 'UPI-TXN-9988221100',
-    },
-  });
-
-  // Notifications
-  await prisma.notification.createMany({
-    data: [
-      {
-        userId: patientUser.id,
-        title: 'Appointment Reminder',
-        message: 'Your upcoming OPD consultation with Dr. Ananya Deshmukh is scheduled for July 28 at 02:30 PM.',
-        type: 'INFO',
-      },
-      {
-        userId: patientUser.id,
-        title: 'Lab Report Completed',
-        message: 'Your Lipid Profile & Fasting Blood Sugar report is ready for download.',
-        type: 'SUCCESS',
-      },
-    ],
-  });
-
-  // Audit Logs
-  await prisma.auditLog.createMany({
-    data: [
-      {
-        userId: superAdmin.id,
-        action: 'SYSTEM_INITIALIZATION',
-        resource: 'DATABASE',
-        details: 'UHIS Database initialized with standard seed configuration.',
-      },
-      {
-        userId: doctorUser1.id,
-        action: 'CREATE_PRESCRIPTION',
-        resource: 'PRESCRIPTION',
-        details: `Issued prescription for patient ABHA ID: ${patient.abhaId}`,
-      },
-    ],
-  });
-
-  console.log('✅ UHIS Database Seeding Completed Successfully!');
-  console.log('\n--- DEMO LOGIN CREDENTIALS ---');
-  console.log('1. Super Admin: admin@uhis.org | password: password123');
-  console.log('2. Hospital Admin: hospitaladmin@apollo.org | password: password123');
-  console.log('3. Doctor: dr.sharma@apollo.org | password: password123');
-  console.log('4. Patient: patient.rahul@gmail.com | password: password123');
-  console.log('5. Lab: lab.metro@uhis.org | password: password123');
-  console.log('6. Pharmacy: pharmacy.city@uhis.org | password: password123');
-  console.log('7. Receptionist: receptionist.pria@apollo.org | password: password123');
-  console.log('-------------------------------\n');
+  console.log('✅ UHIS Database Seeding Completed Successfully! 100 Patients & 100 Doctors Generated.');
 }
 
 main()

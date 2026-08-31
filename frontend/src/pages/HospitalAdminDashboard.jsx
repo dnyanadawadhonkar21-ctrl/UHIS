@@ -1,204 +1,227 @@
-import React, { useState, useEffect } from 'react';
-import api from '../services/api';
-import StatCard from '../components/StatCard';
-import { Building2, Stethoscope, Users, IndianRupee, Plus, Calendar, Activity } from 'lucide-react';
-import { ResponsiveContainer, BarChart, Bar, XAxis, YAxis, Tooltip } from 'recharts';
+import React, { useState } from "react";
+import AppLayout from "../components/layout/AppLayout";
+import InstrumentPanel from "../components/ui/InstrumentPanel";
+import DataRow from "../components/ui/DataRow";
+import StatusCode from "../components/ui/StatusCode";
+import Button from "../components/ui/Button";
+import { useToast } from "../context/ToastContext";
+import { hospitalStats } from "../data/mockData";
 
-const HospitalAdminDashboard = () => {
-  const [data, setData] = useState(null);
-  const [loading, setLoading] = useState(true);
-  const [showAddDoctor, setShowAddDoctor] = useState(false);
-  const [doctorForm, setDoctorForm] = useState({
-    fullName: '',
-    email: '',
-    specialization: 'Cardiology',
-    licenseNumber: '',
-    qualification: 'MBBS, MD',
-    experienceYears: '8',
-    consultationFee: '600',
-  });
+const TABS = [
+  { id: "overview", label: "OVERVIEW" },
+  { id: "beds", label: "BED MANAGEMENT" },
+  { id: "staff", label: "STAFF ROSTER" },
+];
 
-  useEffect(() => {
-    fetchMetrics();
-  }, []);
+const STAFF = [
+  { id: "D-001", name: "Dr. Priya Sharma", dept: "Internal Medicine", shift: "08:00–16:00", status: "on_duty" },
+  { id: "D-002", name: "Dr. Arjun Mehta", dept: "Cardiology", shift: "08:00–16:00", status: "on_duty" },
+  { id: "D-003", name: "Dr. Sunita Rao", dept: "Pediatrics", shift: "16:00–00:00", status: "off_duty" },
+  { id: "D-004", name: "Dr. Kiran Nair", dept: "Neurology", shift: "00:00–08:00", status: "off_duty" },
+  { id: "D-005", name: "Dr. Rahul Desai", dept: "Emergency", shift: "08:00–16:00", status: "on_duty" },
+  { id: "D-006", name: "Dr. Meera Pillai", dept: "Orthopedics", shift: "08:00–16:00", status: "leave" },
+];
 
-  const fetchMetrics = async () => {
-    try {
-      setLoading(true);
-      const res = await api.get('/hospitals/metrics');
-      if (res.data.success) {
-        setData(res.data);
-      }
-    } catch (err) {
-      console.error('Failed to fetch hospital metrics:', err);
-    } finally {
-      setLoading(false);
-    }
-  };
+export default function HospitalAdminDashboard() {
+  const toast = useToast();
+  const [activeTab, setActiveTab] = useState("overview");
 
-  const handleAddDoctor = async (e) => {
-    e.preventDefault();
-    try {
-      await api.post('/hospitals/doctors', doctorForm);
-      setShowAddDoctor(false);
-      fetchMetrics();
-    } catch (err) {
-      alert('Failed to register doctor.');
-    }
-  };
+  const totalBeds = hospitalStats.beds?.total || 2478;
+  const occupiedBeds = hospitalStats.beds?.occupied || 2180;
+  const icuOccupied = hospitalStats.beds?.icuOccupied || 312;
+  const icuBeds = hospitalStats.beds?.icuTotal || 340;
+  const doctorsCount = hospitalStats.departments?.reduce((acc, d) => acc + d.doctorsOnDuty, 0) || 101;
 
-  if (loading) {
-    return (
-      <div className="p-8 text-center text-slate-400 flex items-center justify-center gap-2">
-        <Activity className="w-6 h-6 text-cyan-400 animate-spin" /> Loading Hospital Operations...
-      </div>
-    );
-  }
-
-  const revenueData = [
-    { day: 'Mon', revenue: 14500 },
-    { day: 'Tue', revenue: 22000 },
-    { day: 'Wed', revenue: 18500 },
-    { day: 'Thu', revenue: 29000 },
-    { day: 'Fri', revenue: 24000 },
-    { day: 'Sat', revenue: 31000 },
-  ];
+  const occupancyPct = Math.round((occupiedBeds / totalBeds) * 100);
+  const icuPct = Math.round((icuOccupied / icuBeds) * 100);
 
   return (
-    <div className="space-y-6">
-      <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4">
-        <div>
-          <h2 className="text-2xl font-extrabold text-white flex items-center gap-2">
-            <Building2 className="w-7 h-7 text-cyan-400" /> Hospital Administration & Operations
-          </h2>
-          <p className="text-xs text-slate-400">Doctor Roster, Department Revenue & OPD Schedule Management</p>
-        </div>
-
-        <button
-          onClick={() => setShowAddDoctor(true)}
-          className="flex items-center gap-2 px-4 py-2.5 rounded-xl bg-gradient-to-r from-cyan-500 to-blue-500 text-slate-950 text-xs font-bold shadow-lg shadow-cyan-500/20 hover:opacity-90 transition"
+    <AppLayout tabs={TABS} activeTab={activeTab} onTabChange={setActiveTab}>
+      <div style={{ maxWidth: "1100px", margin: "0 auto" }}>
+        {/* KPI strip */}
+        <div
+          style={{
+            display: "grid",
+            gridTemplateColumns: "repeat(4, 1fr)",
+            border: "1px solid var(--color-border)",
+            background: "var(--color-panel)",
+            borderRadius: "10px",
+            overflow: "hidden",
+            marginBottom: "1.75rem",
+          }}
         >
-          <Plus className="w-4 h-4" /> Add Doctor to Roster
-        </button>
-      </div>
+          {[
+            { label: "TOTAL BEDS", value: totalBeds, signal: "muted" },
+            { label: "OCCUPIED", value: occupiedBeds, signal: occupancyPct > 90 ? "critical" : "warning" },
+            { label: "ICU OCCUPIED", value: `${icuOccupied} / ${icuBeds}`, signal: icuPct > 90 ? "critical" : "warning" },
+            { label: "DOCTORS ON DUTY", value: doctorsCount, signal: "normal" },
+          ].map(({ label, value, signal }, i) => (
+            <div key={label} style={{ padding: "1.25rem", borderRight: i < 3 ? "1px solid var(--color-border)" : "none" }}>
+              <div className="type-label" style={{ marginBottom: "0.4rem" }}>{label}</div>
+              <div className="type-stat" style={{ color: signal === "muted" ? "var(--color-ink)" : `var(--color-signal-${signal})` }}>
+                {value}
+              </div>
+            </div>
+          ))}
+        </div>
 
-      <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
-        <StatCard title="Active Doctors" value={data?.metrics?.doctors || 0} icon={Stethoscope} color="cyan" subtext="In OPD & Emergency" />
-        <StatCard title="Registered Patients" value={data?.metrics?.patients || 0} icon={Users} color="emerald" subtext="Unique patient IDs" />
-        <StatCard title="Total Consultations" value={data?.metrics?.appointments || 0} icon={Calendar} color="amber" subtext="Completed & Pending" />
-        <StatCard title="Hospital Revenue" value={`₹${data?.metrics?.totalRevenue || 0}`} icon={IndianRupee} color="purple" subtext="Billed consultations & labs" />
-      </div>
+        {activeTab === "overview" && (
+          <div className="fade-in ha-grid" style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: "1.25rem" }}>
+            <InstrumentPanel title="Today's Activity" subtitle="FACILITY METRICS" channel="muted">
+              <DataRow label="REGISTERED OPD TODAY" value={<span className="status-info">{hospitalStats.opdToday?.registered || 3412}</span>} />
+              <DataRow label="COMPLETED OPD" value={<span className="status-normal">{hospitalStats.opdToday?.completed || 2189}</span>} />
+              <DataRow label="WAITING IN QUEUE" value={<span className="status-warning">{hospitalStats.opdToday?.waiting || 802}</span>} />
+              <DataRow label="ICU OCCUPANCY" value={<span className={icuPct > 90 ? "status-critical" : "status-warning"}>{icuPct}%</span>} />
+              <DataRow label="GENERAL OCCUPANCY" value={<span className={occupancyPct > 90 ? "status-critical" : "status-warning"}>{occupancyPct}%</span>} />
+            </InstrumentPanel>
 
-      <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
-        {/* Doctor Roster */}
-        <div className="lg:col-span-2 glass-card p-6 rounded-2xl border border-slate-800 space-y-4">
-          <h3 className="text-sm font-bold text-white uppercase tracking-wider">Medical Staff & Doctor Roster</h3>
-          <div className="overflow-x-auto custom-scrollbar">
-            <table className="w-full text-left text-xs text-slate-300">
-              <thead className="bg-slate-900 text-slate-400 uppercase text-[10px]">
-                <tr>
-                  <th className="p-3">Doctor Name</th>
-                  <th className="p-3">Specialization</th>
-                  <th className="p-3">License No</th>
-                  <th className="p-3">Fee</th>
-                  <th className="p-3">Schedule</th>
-                </tr>
-              </thead>
-              <tbody className="divide-y divide-slate-800">
-                {data?.doctors?.map((doc) => (
-                  <tr key={doc.id} className="hover:bg-slate-800/50 transition">
-                    <td className="p-3 font-semibold text-white">{doc.user?.fullName}</td>
-                    <td className="p-3 text-cyan-400 font-medium">{doc.specialization}</td>
-                    <td className="p-3 font-mono text-slate-400">{doc.licenseNumber}</td>
-                    <td className="p-3 text-emerald-400 font-bold">₹{doc.consultationFee}</td>
-                    <td className="p-3 text-slate-400">{doc.availableDays} ({doc.timeSlot})</td>
+            <InstrumentPanel title="Departmental Occupancy" subtitle="LIVE STATUS" channel="muted">
+              {hospitalStats.departments?.map((d) => {
+                const pct = parseInt(d.bedOccupancy) || 85;
+                const sig = pct >= 90 ? "critical" : pct >= 75 ? "warning" : "normal";
+                return (
+                  <div key={d.name} style={{ padding: "0.625rem 1.25rem", borderBottom: "1px solid var(--color-border)" }}>
+                    <div style={{ display: "flex", justifyContent: "space-between", marginBottom: "0.3rem" }}>
+                      <span className="type-label" style={{ color: "var(--color-ink-secondary)" }}>{d.name.toUpperCase()}</span>
+                      <span className="type-value" style={{ fontSize: "0.8rem", fontWeight: 600, color: `var(--color-signal-${sig})` }}>
+                        {d.doctorsOnDuty} Docs · {pct}%
+                      </span>
+                    </div>
+                    <div style={{ height: "4px", background: "var(--color-surface-alt)", width: "100%", borderRadius: "99px", overflow: "hidden" }}>
+                      <div
+                        style={{
+                          height: "100%",
+                          width: `${pct}%`,
+                          background: sig === "critical" ? "var(--color-signal-critical)"
+                            : sig === "warning" ? "var(--color-signal-warning)"
+                            : "var(--color-signal-normal)",
+                        }}
+                      />
+                    </div>
+                  </div>
+                );
+              })}
+            </InstrumentPanel>
+
+            <InstrumentPanel title="Emergency Contacts" subtitle="DUTY ROSTER" channel="critical">
+              {[
+                { label: "EMERGENCY PHYSICIAN ON CALL", val: "Dr. Rahul Desai · +91 98100 44221" },
+                { label: "ICU ATTENDING", val: "Dr. Arjun Mehta · +91 98200 55441" },
+                { label: "BLOOD BANK", val: "Ext. 2241 · External: 011-4422-8800" },
+                { label: "AMBULANCE DISPATCH", val: "Ext. 1101 · 108" },
+              ].map(({ label, val }) => (
+                <DataRow key={label} label={label} value={val} />
+              ))}
+            </InstrumentPanel>
+
+            <InstrumentPanel title="System Alerts" subtitle="ATTENTION REQUIRED" channel="warning">
+              {[
+                { msg: "ICU capacity at 91.7% — Critical threshold reached", sig: "critical" },
+                { msg: "Cardiology department at 98% bed occupancy", sig: "critical" },
+                { msg: "Oxygen manifold system pressure: Optimal (4.2 bar)", sig: "normal" },
+                { msg: "Emergency & Trauma footfall up 14% from yesterday", sig: "warning" },
+              ].map(({ msg, sig }) => (
+                <div
+                  key={msg}
+                  style={{
+                    padding: "0.625rem 1.25rem",
+                    borderBottom: "1px solid var(--color-border)",
+                    display: "flex",
+                    gap: "0.5rem",
+                    alignItems: "flex-start",
+                  }}
+                >
+                  <span className={`status-${sig}`} style={{ flexShrink: 0, marginTop: "0.1rem" }}>
+                    {sig === "critical" ? "■" : "●"}
+                  </span>
+                  <span className="type-body" style={{ color: "var(--color-ink-secondary)", fontSize: "0.8rem" }}>{msg}</span>
+                </div>
+              ))}
+            </InstrumentPanel>
+          </div>
+        )}
+
+        {activeTab === "beds" && (
+          <div className="fade-in">
+            {hospitalStats.departments?.map((d) => {
+              const pct = parseInt(d.bedOccupancy) || 85;
+              const sig = pct >= 90 ? "critical" : pct >= 75 ? "warning" : "normal";
+              return (
+                <div key={d.name} className={`instrument-panel channel-${sig}`} style={{ marginBottom: "1px" }}>
+                  <div style={{ padding: "1rem 1.25rem", display: "flex", justifyContent: "space-between", alignItems: "center", flexWrap: "wrap", gap: "1rem" }}>
+                    <div>
+                      <div className="type-heading" style={{ marginBottom: "0.25rem" }}>{d.name}</div>
+                      <div style={{ display: "flex", gap: "1.25rem" }}>
+                        <span className="type-label" style={{ color: "var(--color-ink-secondary)" }}>DOCTORS: {d.doctorsOnDuty}</span>
+                        <span className="type-label" style={{ color: `var(--color-signal-${sig})`, fontWeight: 600 }}>OPD LOAD: {d.opdLoad}</span>
+                        <span className="type-label" style={{ color: "var(--color-signal-normal)", fontWeight: 600 }}>OCCUPANCY: {d.bedOccupancy}</span>
+                      </div>
+                    </div>
+                    <div style={{ display: "flex", alignItems: "center", gap: "1rem" }}>
+                      <span className="type-value" style={{ fontSize: "1.4rem", fontWeight: 800, color: `var(--color-signal-${sig})`, fontFamily: "'Plus Jakarta Sans', sans-serif", letterSpacing: "-0.02em" }}>{pct}%</span>
+                      <Button variant="secondary" size="sm" onClick={() => toast.info(`Bed allocation report for ${d.name} exported.`)}>
+                        REPORT
+                      </Button>
+                    </div>
+                  </div>
+                  <div style={{ padding: "0 1.25rem 1rem" }}>
+                    <div style={{ height: "6px", background: "var(--color-surface-alt)", borderRadius: "99px", overflow: "hidden" }}>
+                      <div
+                        style={{
+                          height: "100%",
+                          width: `${pct}%`,
+                          background: sig === "critical" ? "var(--color-signal-critical)"
+                            : sig === "warning" ? "var(--color-signal-warning)"
+                            : "var(--color-signal-normal)",
+                        }}
+                      />
+                    </div>
+                  </div>
+                </div>
+              );
+            })}
+          </div>
+        )}
+
+        {activeTab === "staff" && (
+          <div className="fade-in">
+            <div className="instrument-panel" style={{ overflow: "hidden" }}>
+              <div className="panel-header">
+                <div className="type-label" style={{ color: "var(--color-ink-secondary)", marginBottom: "0.15rem" }}>TODAY</div>
+                <div className="type-heading">Doctor Duty Roster</div>
+              </div>
+              <table style={{ width: "100%", borderCollapse: "collapse" }}>
+                <thead>
+                  <tr style={{ borderBottom: "1px solid var(--color-border)" }}>
+                    {["ID", "NAME", "DEPARTMENT", "SHIFT", "STATUS"].map((h) => (
+                      <th key={h} className="type-label" style={{ padding: "0.6rem 1rem", textAlign: "left", color: "var(--color-ink-secondary)", background: "var(--color-surface)" }}>
+                        {h}
+                      </th>
+                    ))}
                   </tr>
-                ))}
-              </tbody>
-            </table>
+                </thead>
+                <tbody>
+                  {STAFF.map((s) => (
+                    <tr key={s.id} style={{ borderBottom: "1px solid var(--color-border)" }}>
+                      <td style={{ padding: "0.75rem 1rem" }}><span className="type-id" style={{ color: "var(--color-ink-muted)" }}>{s.id}</span></td>
+                      <td style={{ padding: "0.75rem 1rem" }}><span className="type-value" style={{ color: "var(--color-ink)", fontSize: "0.85rem" }}>{s.name}</span></td>
+                      <td style={{ padding: "0.75rem 1rem" }}><span className="type-body" style={{ color: "var(--color-ink-secondary)", fontSize: "0.8rem" }}>{s.dept}</span></td>
+                      <td style={{ padding: "0.75rem 1rem" }}><span className="type-id" style={{ color: "var(--color-ink-secondary)" }}>{s.shift}</span></td>
+                      <td style={{ padding: "0.75rem 1rem" }}>
+                        <StatusCode
+                          status={s.status === "on_duty" ? "normal" : s.status === "leave" ? "warning" : "muted"}
+                          label={s.status.replace("_", " ").toUpperCase()}
+                        />
+                      </td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
           </div>
-        </div>
-
-        {/* Revenue Analytics Chart */}
-        <div className="glass-card p-6 rounded-2xl border border-slate-800 space-y-4">
-          <h3 className="text-sm font-bold text-white uppercase tracking-wider">Weekly OPD Revenue (₹)</h3>
-          <div className="h-64">
-            <ResponsiveContainer width="100%" height="100%">
-              <BarChart data={revenueData}>
-                <XAxis dataKey="day" stroke="#64748b" fontSize={12} />
-                <YAxis stroke="#64748b" fontSize={12} />
-                <Tooltip contentStyle={{ backgroundColor: '#0f172a', borderColor: '#334155', borderRadius: '12px' }} />
-                <Bar dataKey="revenue" fill="#06b6d4" radius={[6, 6, 0, 0]} />
-              </BarChart>
-            </ResponsiveContainer>
-          </div>
-        </div>
+        )}
       </div>
-
-      {/* Add Doctor Modal */}
-      {showAddDoctor && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-slate-950/80 backdrop-blur-md">
-          <div className="w-full max-w-md glass-card p-6 rounded-2xl border border-slate-700 space-y-4">
-            <h3 className="font-bold text-white text-lg">Register Doctor</h3>
-            <form onSubmit={handleAddDoctor} className="space-y-3 text-xs">
-              <input
-                type="text"
-                required
-                placeholder="Doctor Full Name (e.g. Dr. Ramesh Gupta)"
-                value={doctorForm.fullName}
-                onChange={(e) => setDoctorForm({ ...doctorForm, fullName: e.target.value })}
-                className="w-full px-3 py-2 rounded-xl bg-slate-900 border border-slate-700 text-white"
-              />
-              <input
-                type="email"
-                required
-                placeholder="Email Address"
-                value={doctorForm.email}
-                onChange={(e) => setDoctorForm({ ...doctorForm, email: e.target.value })}
-                className="w-full px-3 py-2 rounded-xl bg-slate-900 border border-slate-700 text-white"
-              />
-              <div className="grid grid-cols-2 gap-2">
-                <input
-                  type="text"
-                  placeholder="Specialization"
-                  value={doctorForm.specialization}
-                  onChange={(e) => setDoctorForm({ ...doctorForm, specialization: e.target.value })}
-                  className="w-full px-3 py-2 rounded-xl bg-slate-900 border border-slate-700 text-white"
-                />
-                <input
-                  type="text"
-                  placeholder="License Number"
-                  value={doctorForm.licenseNumber}
-                  onChange={(e) => setDoctorForm({ ...doctorForm, licenseNumber: e.target.value })}
-                  className="w-full px-3 py-2 rounded-xl bg-slate-900 border border-slate-700 text-white"
-                />
-              </div>
-              <div className="grid grid-cols-2 gap-2">
-                <input
-                  type="number"
-                  placeholder="Consultation Fee (₹)"
-                  value={doctorForm.consultationFee}
-                  onChange={(e) => setDoctorForm({ ...doctorForm, consultationFee: e.target.value })}
-                  className="w-full px-3 py-2 rounded-xl bg-slate-900 border border-slate-700 text-white"
-                />
-                <input
-                  type="number"
-                  placeholder="Experience (Years)"
-                  value={doctorForm.experienceYears}
-                  onChange={(e) => setDoctorForm({ ...doctorForm, experienceYears: e.target.value })}
-                  className="w-full px-3 py-2 rounded-xl bg-slate-900 border border-slate-700 text-white"
-                />
-              </div>
-              <div className="flex justify-end gap-2 pt-2">
-                <button type="button" onClick={() => setShowAddDoctor(false)} className="px-3 py-1.5 rounded-lg bg-slate-800 text-slate-300">Cancel</button>
-                <button type="submit" className="px-4 py-1.5 rounded-lg bg-cyan-500 text-slate-950 font-bold">Add Doctor</button>
-              </div>
-            </form>
-          </div>
-        </div>
-      )}
-    </div>
+      <style>{`@media (max-width: 900px) { .ha-grid { grid-template-columns: 1fr !important; } }`}</style>
+    </AppLayout>
   );
-};
-
-export default HospitalAdminDashboard;
+}

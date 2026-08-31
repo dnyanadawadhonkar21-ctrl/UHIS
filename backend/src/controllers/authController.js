@@ -13,7 +13,11 @@ const generateAbhaId = () => {
 
 const register = async (req, res, next) => {
   try {
-    const { fullName, email, password, role = 'PATIENT', phoneNumber, gender, dateOfBirth } = req.body;
+    const {
+      fullName, email, password, role = 'PATIENT', phoneNumber, gender, dateOfBirth,
+      bloodGroup, height, weight, address, emergencyContact, emergencyPhone,
+      allergies, chronicConditions, pastSurgeries, pastMedications
+    } = req.body;
 
     if (!fullName || !email || !password) {
       return res.status(400).json({ success: false, message: 'Full name, email, and password are required.' });
@@ -46,7 +50,16 @@ const register = async (req, res, next) => {
             abhaId,
             gender: gender || 'MALE',
             dateOfBirth: dateOfBirth ? new Date(dateOfBirth) : new Date('1998-05-15'),
-            bloodGroup: 'O+',
+            bloodGroup: bloodGroup || 'O+',
+            height: height || null,
+            weight: weight || null,
+            address: address || null,
+            emergencyContact: emergencyContact || null,
+            emergencyPhone: emergencyPhone || null,
+            allergies: allergies || null,
+            chronicConditions: chronicConditions || null,
+            pastSurgeries: pastSurgeries || null,
+            pastMedications: pastMedications || null,
           },
         });
       }
@@ -209,10 +222,32 @@ const resetPassword = async (req, res, next) => {
   }
 };
 
+const changePassword = async (req, res, next) => {
+  try {
+    const { currentPassword, newPassword } = req.body;
+    if (!currentPassword || !newPassword) {
+      return res.status(400).json({ success: false, message: 'Current and new passwords required.' });
+    }
+    const user = await prisma.user.findUnique({ where: { id: req.user.id } });
+    if (!user || !(await bcrypt.compare(currentPassword, user.password))) {
+      return res.status(401).json({ success: false, message: 'Invalid current password.' });
+    }
+    const hashedPassword = await bcrypt.hash(newPassword, 10);
+    await prisma.user.update({
+      where: { id: req.user.id },
+      data: { password: hashedPassword },
+    });
+    res.status(200).json({ success: true, message: 'Password changed successfully.' });
+  } catch (error) {
+    next(error);
+  }
+};
+
 module.exports = {
   register,
   login,
   getMe,
   forgotPassword,
   resetPassword,
+  changePassword,
 };

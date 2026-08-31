@@ -1,222 +1,192 @@
-import React, { useState, useEffect } from 'react';
-import api from '../services/api';
-import { Pill, CheckCircle2, Package, Plus, IndianRupee, Activity } from 'lucide-react';
+import React, { useState } from "react";
+import AppLayout from "../components/layout/AppLayout";
+import InstrumentPanel from "../components/ui/InstrumentPanel";
+import DataRow from "../components/ui/DataRow";
+import StatusCode from "../components/ui/StatusCode";
+import Button from "../components/ui/Button";
+import PrecisionInput from "../components/ui/PrecisionInput";
+import Modal from "../components/ui/Modal";
+import { useToast } from "../context/ToastContext";
+import { prescriptionQueue } from "../data/mockData";
 
-const PharmacyDashboard = () => {
-  const [queue, setQueue] = useState([]);
-  const [inventory, setInventory] = useState([]);
-  const [loading, setLoading] = useState(true);
-  const [showAddMed, setShowAddMed] = useState(false);
-  const [medForm, setMedForm] = useState({
-    name: 'Metformin 500mg',
-    genericName: 'Metformin Hydrochloride',
-    brand: 'Glycomet',
-    category: 'ANTIDIABETIC',
-    unitPrice: '6.5',
-    stockQuantity: '400',
-  });
+const TABS = [
+  { id: "queue", label: "RX QUEUE" },
+  { id: "verify", label: "VERIFY PRESCRIPTION" },
+  { id: "inventory", label: "STOCK ALERTS" },
+];
 
-  useEffect(() => {
-    fetchPharmacyData();
-  }, []);
+const LOW_STOCK = [
+  { name: "Metformin HCl 500mg", sku: "MF-500-BL", stock: 42, reorderAt: 100, unit: "tabs" },
+  { name: "Amoxicillin 500mg Cap", sku: "AMX-500-C", stock: 18, reorderAt: 50, unit: "caps" },
+  { name: "ORS Sachets (Electral)", sku: "ORS-ELC-S", stock: 30, reorderAt: 80, unit: "sachets" },
+  { name: "Amlodipine 5mg", sku: "AML-5-TB", stock: 55, reorderAt: 60, unit: "tabs" },
+  { name: "Insulin Glargine 100U/mL", sku: "INS-GLG-V", stock: 8, reorderAt: 20, unit: "vials" },
+];
 
-  const fetchPharmacyData = async () => {
-    try {
-      setLoading(true);
-      const [qRes, invRes] = await Promise.all([
-        api.get('/pharmacy/prescriptions-queue'),
-        api.get('/pharmacy/inventory'),
-      ]);
+export default function PharmacyDashboard() {
+  const toast = useToast();
+  const [activeTab, setActiveTab] = useState("queue");
+  const [lookupVal, setLookupVal] = useState("");
+  const [dispensed, setDispensed] = useState(["RX-2024-0711-0038"]);
 
-      if (qRes.data.success) setQueue(qRes.data.prescriptions);
-      if (invRes.data.success) setInventory(invRes.data.medicines);
-    } catch (err) {
-      console.error('Failed to load pharmacy console:', err);
-    } finally {
-      setLoading(false);
-    }
+  const stats = {
+    total: prescriptionQueue.length,
+    pending: prescriptionQueue.filter((r) => r.status === "pending").length,
+    dispensed: prescriptionQueue.filter((r) => r.status === "dispensed").length,
+    lowStock: LOW_STOCK.filter((s) => s.stock < s.reorderAt).length,
   };
-
-  const handleDispense = async (prescription) => {
-    try {
-      await api.post('/pharmacy/dispense', {
-        prescriptionId: prescription.id,
-        patientId: prescription.patientId,
-        totalCost: 350,
-      });
-      fetchPharmacyData();
-      alert('Medicines dispensed & invoice generated successfully!');
-    } catch (err) {
-      alert('Failed to dispense medicines.');
-    }
-  };
-
-  const handleAddMedicine = async (e) => {
-    e.preventDefault();
-    try {
-      await api.post('/pharmacy/inventory', medForm);
-      setShowAddMed(false);
-      fetchPharmacyData();
-    } catch (err) {
-      alert('Failed to add medicine.');
-    }
-  };
-
-  if (loading) {
-    return (
-      <div className="p-8 text-center text-slate-400 flex items-center justify-center gap-2">
-        <Activity className="w-6 h-6 text-rose-400 animate-spin" /> Loading CityMed E-Pharmacy Console...
-      </div>
-    );
-  }
 
   return (
-    <div className="space-y-6">
-      <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4">
-        <div>
-          <h2 className="text-2xl font-extrabold text-white flex items-center gap-2">
-            <Pill className="w-7 h-7 text-rose-400" /> CityMed 24x7 E-Pharmacy & Inventory
-          </h2>
-          <p className="text-xs text-slate-400">Digital E-Prescription Queue, Drug Stock Manager & Auto-Invoicing</p>
-        </div>
+    <AppLayout tabs={TABS} activeTab={activeTab} onTabChange={setActiveTab}>
+      <div style={{ maxWidth: "1100px", margin: "0 auto" }}>
 
-        <button
-          onClick={() => setShowAddMed(true)}
-          className="flex items-center gap-2 px-4 py-2.5 rounded-xl bg-gradient-to-r from-rose-500 to-pink-500 text-white text-xs font-bold shadow-lg shadow-rose-500/20 hover:opacity-90 transition"
+        <div
+          style={{
+            display: "grid",
+            gridTemplateColumns: "repeat(4, 1fr)",
+            border: "1px solid var(--color-border)",
+            background: "var(--color-panel)",
+            borderRadius: "10px",
+            overflow: "hidden",
+            marginBottom: "1.75rem",
+          }}
         >
-          <Plus className="w-4 h-4" /> Add Drug Stock
-        </button>
-      </div>
+          {[
+            { label: "RX QUEUE TODAY", value: stats.total, signal: "muted" },
+            { label: "PENDING DISPENSE", value: stats.pending, signal: "warning" },
+            { label: "DISPENSED", value: stats.dispensed, signal: "normal" },
+            { label: "LOW STOCK ALERTS", value: stats.lowStock, signal: "critical" },
+          ].map(({ label, value, signal }, i) => (
+            <div key={label} style={{ padding: "1.25rem", borderRight: i < 3 ? "1px solid var(--color-border)" : "none" }}>
+              <div className="type-label" style={{ marginBottom: "0.4rem" }}>{label}</div>
+              <div className="type-stat" style={{ color: signal === "muted" ? "var(--color-ink)" : `var(--color-signal-${signal})` }}>
+                {value.toString().padStart(2, "0")}
+              </div>
+            </div>
+          ))}
+        </div>
 
-      <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
-        {/* E-Prescription Dispensing Queue */}
-        <div className="glass-card p-6 rounded-2xl border border-slate-800 space-y-4">
-          <h3 className="text-sm font-bold text-white uppercase tracking-wider flex items-center gap-2">
-            <Pill className="w-4 h-4 text-rose-400" /> Incoming E-Prescription Queue
-          </h3>
-          <div className="space-y-3 max-h-96 overflow-y-auto custom-scrollbar">
-            {queue.map((presc) => (
-              <div key={presc.id} className="p-4 rounded-xl bg-slate-900 border border-slate-800 space-y-3">
-                <div className="flex items-center justify-between">
-                  <div>
-                    <h4 className="font-bold text-white text-sm">{presc.patient?.user?.fullName}</h4>
-                    <p className="text-xs font-mono text-cyan-400">ABHA: {presc.patient?.abhaId}</p>
+        {activeTab === "queue" && (
+          <div className="fade-in">
+            {prescriptionQueue.map((rx) => {
+              const isDispensed = dispensed.includes(rx.rxId || rx.id);
+              return (
+                <div
+                  key={rx.rxId || rx.id}
+                  className={`instrument-panel channel-${isDispensed ? "normal" : "warning"}`}
+                  style={{ marginBottom: "1.25rem" }}
+                >
+                  <div className="panel-header" style={{ display: "flex", justifyContent: "space-between", alignItems: "center" }}>
+                    <div>
+                      <div className="type-label" style={{ color: "var(--color-ink-secondary)", marginBottom: "0.15rem" }}>
+                        {rx.rxId || rx.id} · {rx.issued || rx.issuedDate}
+                      </div>
+                      <div className="type-heading">{rx.patient || rx.patientName}</div>
+                    </div>
+                    <div style={{ display: "flex", gap: "0.75rem", alignItems: "center" }}>
+                      <StatusCode status={isDispensed ? "normal" : "warning"} label={isDispensed ? "DISPENSED" : "PENDING"} />
+                      {!isDispensed && (
+                        <Button
+                          size="sm"
+                          onClick={() => {
+                            setDispensed((d) => [...d, rx.rxId || rx.id]);
+                            toast.success(`Rx ${rx.rxId || rx.id} dispensed successfully.`);
+                          }}
+                        >
+                          DISPENSE ALL →
+                        </Button>
+                      )}
+                    </div>
                   </div>
-                  <span className="text-[10px] font-mono text-slate-400">Dr. {presc.doctor?.user?.fullName}</span>
+                  <div>
+                    <div style={{ display: "flex", justifyContent: "space-between", padding: "0.5rem 1.25rem", background: "var(--color-surface)", borderBottom: "1px solid var(--color-border)" }}>
+                      <span className="type-label" style={{ color: "var(--color-ink-secondary)" }}>PRESCRIBED BY: {rx.doctor || rx.prescribedBy}</span>
+                      <span className="type-label" style={{ color: "var(--color-ink-secondary)" }}>ABHA: {rx.abhaId || "91-4782-3391-6284"}</span>
+                    </div>
+                    {(rx.items || []).map((item, i) => (
+                      <div
+                        key={i}
+                        className="data-row"
+                        style={{ display: "grid", gridTemplateColumns: "2fr 1fr 1fr 1fr" }}
+                      >
+                        <span className="type-value" style={{ color: "var(--color-ink)", fontSize: "0.85rem" }}>{item.name}</span>
+                        <span className="type-label" style={{ color: "var(--color-ink-secondary)" }}>QTY: {item.qty}</span>
+                        <span className="type-label" style={{ color: "var(--color-ink-secondary)" }}>{item.frequency}</span>
+                        <span className="type-label" style={{ color: "var(--color-ink-secondary)" }}>{item.duration}</span>
+                      </div>
+                    ))}
+                  </div>
                 </div>
+              );
+            })}
+          </div>
+        )}
 
-                <div className="p-2.5 rounded-lg bg-slate-800/60 border border-slate-800 text-xs space-y-1">
-                  <p className="text-slate-400 font-semibold text-[11px]">Prescribed Drugs:</p>
-                  {presc.items?.map((item, i) => (
-                    <p key={i} className="text-rose-300 font-medium">
-                      • {item.medicineName} ({item.dosage}) - {item.frequency} [{item.durationDays} days]
-                    </p>
-                  ))}
-                </div>
-
-                <div className="flex items-center justify-between pt-1">
-                  <span className="text-xs font-bold text-emerald-400">Est. Invoice: ₹350.00</span>
-                  <button
-                    onClick={() => handleDispense(presc)}
-                    className="flex items-center gap-1 px-3 py-1.5 rounded-lg bg-rose-500 hover:bg-rose-600 text-white text-xs font-bold transition"
-                  >
-                    <CheckCircle2 className="w-3.5 h-3.5" /> Dispense & Invoice
-                  </button>
-                </div>
+        {activeTab === "verify" && (
+          <div className="fade-in">
+            <InstrumentPanel title="Prescription Verification" subtitle="LOOKUP" channel="info">
+              <div style={{ display: "flex", gap: "0.75rem", marginBottom: "1.5rem" }}>
+                <input
+                  className="precision-input"
+                  placeholder="Enter Rx Number or Patient Mobile / ABHA ID"
+                  value={lookupVal}
+                  onChange={(e) => setLookupVal(e.target.value)}
+                  style={{ flex: 1 }}
+                />
+                <Button onClick={() => toast.info(`Searching for: ${lookupVal}`)}>LOOKUP</Button>
               </div>
-            ))}
+              <div className="type-body" style={{ color: "var(--color-ink-secondary)", padding: "2rem 0", textAlign: "center" }}>
+                Enter an Rx number, ABHA ID, or patient mobile to verify a prescription.
+              </div>
+            </InstrumentPanel>
           </div>
-        </div>
+        )}
 
-        {/* Medicine Inventory */}
-        <div className="glass-card p-6 rounded-2xl border border-slate-800 space-y-4">
-          <h3 className="text-sm font-bold text-white uppercase tracking-wider flex items-center gap-2">
-            <Package className="w-4 h-4 text-rose-400" /> Drug Stock & Inventory
-          </h3>
-          <div className="overflow-x-auto custom-scrollbar max-h-96">
-            <table className="w-full text-left text-xs text-slate-300">
-              <thead className="bg-slate-900 text-slate-400 uppercase text-[10px]">
-                <tr>
-                  <th className="p-3">Medicine Name</th>
-                  <th className="p-3">Category</th>
-                  <th className="p-3">Price</th>
-                  <th className="p-3">In Stock</th>
-                </tr>
-              </thead>
-              <tbody className="divide-y divide-slate-800">
-                {inventory.map((med) => (
-                  <tr key={med.id} className="hover:bg-slate-800/50 transition">
-                    <td className="p-3 font-semibold text-white">
-                      {med.name}
-                      <p className="text-[10px] text-slate-400">{med.brand || med.genericName}</p>
-                    </td>
-                    <td className="p-3"><span className="px-2 py-0.5 rounded bg-slate-800 text-slate-300 border border-slate-700 text-[10px]">{med.category}</span></td>
-                    <td className="p-3 text-emerald-400 font-bold">₹{med.unitPrice}</td>
-                    <td className="p-3 font-bold text-cyan-300">{med.stockQuantity} units</td>
-                  </tr>
-                ))}
-              </tbody>
-            </table>
+        {activeTab === "inventory" && (
+          <div className="fade-in">
+            {LOW_STOCK.map((s) => {
+              const pct = Math.round((s.stock / s.reorderAt) * 100);
+              const sig = pct < 50 ? "critical" : "warning";
+              return (
+                <div
+                  key={s.sku}
+                  className={`instrument-panel channel-${sig}`}
+                  style={{ marginBottom: "1px" }}
+                >
+                  <div style={{ padding: "1rem 1.25rem", display: "flex", justifyContent: "space-between", gap: "1rem", flexWrap: "wrap", alignItems: "center" }}>
+                    <div style={{ flex: 1 }}>
+                      <div style={{ display: "flex", gap: "0.75rem", alignItems: "baseline", marginBottom: "0.25rem" }}>
+                        <span className="type-value" style={{ color: "var(--color-ink)" }}>{s.name}</span>
+                        <span className="type-id" style={{ color: "var(--color-ink-muted)" }}>{s.sku}</span>
+                      </div>
+                      <div style={{ height: "4px", background: "var(--color-surface-alt)", width: "200px", marginTop: "0.4rem", borderRadius: "99px", overflow: "hidden" }}>
+                        <div
+                          style={{
+                            height: "100%",
+                            width: `${Math.min(pct, 100)}%`,
+                            background: sig === "critical" ? "var(--color-signal-critical)" : "var(--color-signal-warning)",
+                          }}
+                        />
+                      </div>
+                    </div>
+                    <div style={{ display: "flex", gap: "1.5rem", alignItems: "center" }}>
+                      <div>
+                        <div className="type-label" style={{ color: "var(--color-ink-secondary)" }}>CURRENT STOCK</div>
+                        <div className="type-value" style={{ fontSize: "1.1rem", fontWeight: 600, color: `var(--color-signal-${sig})` }}>{s.stock} {s.unit}</div>
+                      </div>
+                      <div>
+                        <div className="type-label" style={{ color: "var(--color-ink-secondary)" }}>REORDER AT</div>
+                        <div className="type-value" style={{ fontSize: "1.1rem" }}>{s.reorderAt} {s.unit}</div>
+                      </div>
+                      <Button size="sm" onClick={() => toast.success(`Reorder placed for ${s.name}.`)}>REORDER</Button>
+                    </div>
+                  </div>
+                </div>
+              );
+            })}
           </div>
-        </div>
+        )}
       </div>
-
-      {/* Add Stock Modal */}
-      {showAddMed && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-slate-950/80 backdrop-blur-md">
-          <div className="w-full max-w-md glass-card p-6 rounded-2xl border border-slate-700 space-y-4">
-            <h3 className="font-bold text-white text-lg">Add Drug Inventory</h3>
-            <form onSubmit={handleAddMedicine} className="space-y-3 text-xs">
-              <input
-                type="text"
-                required
-                placeholder="Medicine Name (e.g. Metformin 500mg)"
-                value={medForm.name}
-                onChange={(e) => setMedForm({ ...medForm, name: e.target.value })}
-                className="w-full px-3 py-2 rounded-xl bg-slate-900 border border-slate-700 text-white"
-              />
-              <div className="grid grid-cols-2 gap-2">
-                <input
-                  type="text"
-                  placeholder="Generic Name"
-                  value={medForm.genericName}
-                  onChange={(e) => setMedForm({ ...medForm, genericName: e.target.value })}
-                  className="w-full px-3 py-2 rounded-xl bg-slate-900 border border-slate-700 text-white"
-                />
-                <input
-                  type="text"
-                  placeholder="Category"
-                  value={medForm.category}
-                  onChange={(e) => setMedForm({ ...medForm, category: e.target.value })}
-                  className="w-full px-3 py-2 rounded-xl bg-slate-900 border border-slate-700 text-white"
-                />
-              </div>
-              <div className="grid grid-cols-2 gap-2">
-                <input
-                  type="number"
-                  placeholder="Unit Price (₹)"
-                  value={medForm.unitPrice}
-                  onChange={(e) => setMedForm({ ...medForm, unitPrice: e.target.value })}
-                  className="w-full px-3 py-2 rounded-xl bg-slate-900 border border-slate-700 text-white"
-                />
-                <input
-                  type="number"
-                  placeholder="Stock Quantity"
-                  value={medForm.stockQuantity}
-                  onChange={(e) => setMedForm({ ...medForm, stockQuantity: e.target.value })}
-                  className="w-full px-3 py-2 rounded-xl bg-slate-900 border border-slate-700 text-white"
-                />
-              </div>
-              <div className="flex justify-end gap-2 pt-2">
-                <button type="button" onClick={() => setShowAddMed(false)} className="px-3 py-1.5 rounded-lg bg-slate-800 text-slate-300">Cancel</button>
-                <button type="submit" className="px-4 py-1.5 rounded-lg bg-rose-500 text-white font-bold">Add to Stock</button>
-              </div>
-            </form>
-          </div>
-        </div>
-      )}
-    </div>
+    </AppLayout>
   );
-};
-
-export default PharmacyDashboard;
+}
