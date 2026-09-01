@@ -15,11 +15,14 @@ const pharmacyRoutes = require('./routes/pharmacyRoutes');
 const receptionistRoutes = require('./routes/receptionistRoutes');
 const aiRoutes = require('./routes/aiRoutes');
 const adminRoutes = require('./routes/adminRoutes');
+const emergencyAccessRoutes = require('./routes/emergencyAccessRoutes');
+
+const path = require('path');
 
 const app = express();
 
 // Global Middlewares
-app.use(helmet());
+app.use(helmet({ crossOriginResourcePolicy: false }));
 app.use(
   cors({
     origin: process.env.CORS_ORIGIN || '*',
@@ -28,10 +31,12 @@ app.use(
 );
 app.use(express.json());
 app.use(express.urlencoded({ extended: true }));
+app.use('/uploads', express.static(path.join(__dirname, '../uploads')));
 if (process.env.NODE_ENV === 'development') {
   app.use(morgan('dev'));
 }
 app.use('/api', apiRateLimiter);
+
 
 // Health Check Endpoint
 app.get('/api/v1/health', (req, res) => {
@@ -53,6 +58,7 @@ app.use('/api/v1/pharmacy', pharmacyRoutes);
 app.use('/api/v1/receptionist', receptionistRoutes);
 app.use('/api/v1/ai', aiRoutes);
 app.use('/api/v1/admin', adminRoutes);
+app.use('/api/v1/emergency-access', emergencyAccessRoutes);
 
 // 404 Route Handler
 app.use('*', (req, res) => {

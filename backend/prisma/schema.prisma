@@ -81,6 +81,7 @@ model Doctor {
   prescriptions  Prescription[]
   medicalRecords MedicalRecord[]
   diagnoses      Diagnosis[]
+  emergencyAccessRequests EmergencyAccessRequest[]
 }
 
 model Patient {
@@ -111,6 +112,7 @@ model Patient {
   labReports         LabReport[]
   billings           Billing[]
   dispenseRecords    DispenseRecord[]
+  emergencyAccessRequests EmergencyAccessRequest[]
 }
 
 model Appointment {
@@ -318,4 +320,23 @@ model AuditLog {
   timestamp DateTime @default(now())
 
   user      User?    @relation(fields: [userId], references: [id], onDelete: SetNull)
+}
+
+model EmergencyAccessRequest {
+  id              String    @id @default(uuid())
+  patientId       String
+  doctorId        String
+  reason          String
+  status          String    @default("PENDING") // PENDING, APPROVED, VERIFIED, EXPIRED, REJECTED, REVOKED
+  otpHash         String?
+  expiresAt       DateTime? // OTP expiration (5 mins from approval)
+  accessExpiresAt DateTime? // Temporary read-only record access expiration (15 mins from verification)
+  attempts        Int       @default(0)
+  createdAt       DateTime  @default(now())
+  approvedAt      DateTime?
+  verifiedAt      DateTime?
+  revokedAt       DateTime?
+
+  patient         Patient   @relation(fields: [patientId], references: [id], onDelete: Cascade)
+  doctor          Doctor    @relation(fields: [doctorId], references: [id], onDelete: Cascade)
 }
