@@ -32,15 +32,33 @@ const SECURITY_INFO = [
   { icon: Activity, label: "Full audit logging" },
 ];
 
+const DEMO_CREDENTIALS = {
+  patient: { email: "patient@uhis.gov.in", password: "password123" },
+  doctor: { email: "doctor@uhis.gov.in", password: "password123" },
+  admin: { email: "hospital@uhis.gov.in", password: "password123" },
+  superadmin: { email: "admin@uhis.gov.in", password: "password123" },
+  lab: { email: "lab@uhis.gov.in", password: "password123" },
+  pharmacy: { email: "pharmacy@uhis.gov.in", password: "password123" },
+  receptionist: { email: "receptionist@uhis.gov.in", password: "password123" },
+};
+
 export default function LoginPage() {
   const navigate = useNavigate();
   const { login, demoLogin } = useAuth();
   const toast = useToast();
   const [role, setRole] = useState("patient");
-  const [email, setEmail] = useState("");
-  const [password, setPassword] = useState("");
+  const [email, setEmail] = useState("patient@uhis.gov.in");
+  const [password, setPassword] = useState("password123");
   const [showPassword, setShowPassword] = useState(false);
   const [loading, setLoading] = useState(false);
+
+  const handleRoleSelect = (roleId) => {
+    setRole(roleId);
+    if (DEMO_CREDENTIALS[roleId]) {
+      setEmail(DEMO_CREDENTIALS[roleId].email);
+      setPassword(DEMO_CREDENTIALS[roleId].password);
+    }
+  };
 
   const handleLogin = async (e) => {
     e.preventDefault();
@@ -53,15 +71,16 @@ export default function LoginPage() {
       await login(email, password, role);
       toast.success("Welcome to UHIS.");
       navigate(ROLE_DASHBOARDS[role] || "/dashboard");
-    } catch {
-      toast.error("Authentication failed. Check your credentials.");
+    } catch (err) {
+      const msg = err.response?.data?.message || err.message || "Authentication failed. Check your credentials.";
+      toast.error(msg);
     } finally {
       setLoading(false);
     }
   };
 
-  const handleDemo = (r) => {
-    demoLogin(r);
+  const handleDemo = async (r) => {
+    await demoLogin(r);
     toast.success(`Demo session — ${ROLES.find((x) => x.id === r)?.label} portal.`);
     navigate(ROLE_DASHBOARDS[r] || "/dashboard");
   };
@@ -217,7 +236,7 @@ export default function LoginPage() {
               <button
                 key={r.id}
                 type="button"
-                onClick={() => setRole(r.id)}
+                onClick={() => handleRoleSelect(r.id)}
                 style={{
                   padding: "0.4rem 0.875rem",
                   borderRadius: "99px",
