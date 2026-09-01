@@ -10,6 +10,10 @@ async function main() {
     await prisma.$connect();
     console.log('✅ Connected successfully to UHIS Database via Prisma ORM.');
 
+    // Ensure demo users exist (additive, non-destructive)
+    const seedDemoUsers = require('./utils/seedDemoUsers');
+    await seedDemoUsers().catch(e => console.warn('⚠️ Demo user seeding skipped:', e.message));
+
     app.listen(PORT, () => {
       console.log(`🚀 UHIS Server listening on port ${PORT} [${process.env.NODE_ENV || 'development'} mode]`);
       console.log(`📡 Health Check URL: http://localhost:${PORT}/api/v1/health`);

@@ -6,20 +6,34 @@ import { useToast } from "../context/ToastContext";
 import AppLayout from "../components/layout/AppLayout";
 
 const PORTALS = [
-  { code: "PT", role: "patient", title: "Patient Portal", path: "/patient",
-    desc: "Longitudinal health records, appointments, medications, lab results.", signal: "normal" },
-  { code: "DR", role: "doctor", title: "Clinician OPD", path: "/doctor",
-    desc: "Patient queue, EHR access, clinical notes, prescription builder.", signal: "info" },
-  { code: "HA", role: "admin", title: "Hospital Admin", path: "/hospital",
-    desc: "Bed management, staff rostering, departmental metrics.", signal: "warning" },
-  { code: "SA", role: "superadmin", title: "System Administrator", path: "/superadmin",
-    desc: "National grid governance, hospital onboarding, security audit.", signal: "critical" },
-  { code: "DL", role: "lab", title: "Diagnostic Lab", path: "/lab",
-    desc: "Test order queue, sample collection, result upload, dispatch.", signal: "purple" },
-  { code: "PH", role: "pharmacy", title: "Pharmacy Dispense", path: "/pharmacy",
-    desc: "Prescription verification, dispensation, inventory management.", signal: "normal" },
-  { code: "RC", role: "receptionist", title: "Reception / OPD Desk", path: "/reception",
-    desc: "Walk-in registration, token generation, doctor slot assignment.", signal: "info" },
+  {
+    code: "PT", role: "patient", title: "Patient Portal", path: "/patient",
+    desc: "Longitudinal health records, appointments, medications, lab results.", signal: "normal"
+  },
+  {
+    code: "DR", role: "doctor", title: "Clinician OPD", path: "/doctor",
+    desc: "Patient queue, EHR access, clinical notes, prescription builder.", signal: "info"
+  },
+  {
+    code: "HA", role: "admin", title: "Hospital Admin", path: "/hospital",
+    desc: "Bed management, staff rostering, departmental metrics.", signal: "warning"
+  },
+  {
+    code: "SA", role: "superadmin", title: "System Administrator", path: "/superadmin",
+    desc: "National grid governance, hospital onboarding, security audit.", signal: "critical"
+  },
+  {
+    code: "DL", role: "lab", title: "Diagnostic Lab", path: "/lab",
+    desc: "Test order queue, sample collection, result upload, dispatch.", signal: "purple"
+  },
+  {
+    code: "PH", role: "pharmacy", title: "Pharmacy Dispense", path: "/pharmacy",
+    desc: "Prescription verification, dispensation, inventory management.", signal: "normal"
+  },
+  {
+    code: "RC", role: "receptionist", title: "Reception / OPD Desk", path: "/reception",
+    desc: "Walk-in registration, token generation, doctor slot assignment.", signal: "info"
+  },
 ];
 
 export default function DashboardSelectionPage() {

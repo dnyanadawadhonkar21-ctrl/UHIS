@@ -101,7 +101,45 @@ export const AuthProvider = ({ children }) => {
 
   const login = async (email, password, role) => {
     try {
-      const response = await api.post('/auth/login', { email, password }).catch(() => null);
+      const response = await api.post('/auth/login', { email, password });
+      if (response && response.data && response.data.success) {
+        const { token: authToken, user: userData } = response.data;
+        const normalized = {
+          ...userData,
+          name: userData.fullName || userData.name,
+          fullName: userData.fullName || userData.name,
+          role: (userData.role || 'patient').toLowerCase(),
+        };
+        localStorage.setItem('uhis_token', authToken);
+        localStorage.setItem('uhis_user', JSON.stringify(normalized));
+        setToken(authToken);
+        setUser(normalized);
+        return normalized;
+      }
+      throw new Error(response?.data?.message || 'Login failed.');
+    } catch (e) {
+      // Clear any invalid tokens
+      localStorage.removeItem('uhis_token');
+      localStorage.removeItem('uhis_user');
+      setToken(null);
+      setUser(null);
+      throw e;
+    }
+  };
+
+  const logout = () => {
+    localStorage.removeItem('uhis_token');
+    localStorage.removeItem('uhis_user');
+    setToken(null);
+    setUser(null);
+  };
+
+  const demoLogin = async (roleKeyOrEmail) => {
+    const roleKey = Object.keys(DEMO_USERS).find(k => k === roleKeyOrEmail || DEMO_USERS[k].email === roleKeyOrEmail) || 'patient';
+    const demoU = DEMO_USERS[roleKey] || DEMO_USERS.patient;
+
+    try {
+      const response = await api.post('/auth/login', { email: demoU.email, password: 'password123' }).catch(() => null);
       if (response && response.data && response.data.success) {
         const { token: authToken, user: userData } = response.data;
         const normalized = {
@@ -117,37 +155,13 @@ export const AuthProvider = ({ children }) => {
         return normalized;
       }
     } catch (e) {
-      console.warn("Backend auth failed, using demo role fallback");
+      console.warn("Backend demo auth failed, falling back to local demo state");
     }
 
-    // Fallback demo authentication if offline
-    const matchedRole = role || Object.keys(DEMO_USERS).find((r) => DEMO_USERS[r].email === email) || "patient";
-    const demoU = DEMO_USERS[matchedRole] || {
-      id: "P-10042",
-      name: email.split("@")[0],
-      fullName: email.split("@")[0],
-      email,
-      role: matchedRole,
-    };
     setUser(demoU);
-    localStorage.setItem('uhis_user', JSON.stringify(demoU));
-    localStorage.setItem('uhis_token', 'demo-jwt-token');
-    return demoU;
-  };
-
-  const logout = () => {
-    localStorage.removeItem('uhis_token');
-    localStorage.removeItem('uhis_user');
     setToken(null);
-    setUser(null);
-  };
-
-  const demoLogin = async (roleKeyOrEmail) => {
-    const roleKey = Object.keys(DEMO_USERS).find(k => k === roleKeyOrEmail || DEMO_USERS[k].email === roleKeyOrEmail) || 'patient';
-    const demoU = DEMO_USERS[roleKey] || DEMO_USERS.patient;
-    setUser(demoU);
     localStorage.setItem('uhis_user', JSON.stringify(demoU));
-    localStorage.setItem('uhis_token', 'demo-jwt-token');
+    localStorage.removeItem('uhis_token');
     return demoU;
   };
 

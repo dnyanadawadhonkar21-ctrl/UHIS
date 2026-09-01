@@ -230,7 +230,7 @@ export default function RegisterPage() {
                       <div className="type-label" style={{ marginBottom: "0.4rem" }}>Blood Group</div>
                       <select className="precision-input" value={form.bloodGroup} onChange={set("bloodGroup")}>
                         <option value="">Select</option>
-                        {["A+","A−","B+","B−","O+","O−","AB+","AB−"].map((b) => <option key={b}>{b}</option>)}
+                        {["A+", "A−", "B+", "B−", "O+", "O−", "AB+", "AB−"].map((b) => <option key={b}>{b}</option>)}
                       </select>
                     </div>
                     <PrecisionInput label="Height (cm)" type="number" value={form.height} onChange={set("height")} placeholder="170" />

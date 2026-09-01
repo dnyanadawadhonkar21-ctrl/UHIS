@@ -1,5 +1,25 @@
 import React, { useState, useEffect } from "react";
-import { Edit, Download, AlertTriangle, Heart, Pill, FlaskConical, Calendar } from "lucide-react";
+import {
+  Edit,
+  Download,
+  AlertTriangle,
+  Heart,
+  Pill,
+  FlaskConical,
+  Calendar,
+  Upload,
+  Plus,
+  FileText,
+  FileImage,
+  Eye,
+  X,
+  ZoomIn,
+  ZoomOut,
+  RotateCcw,
+  File,
+  Activity,
+  FolderOpen,
+} from "lucide-react";
 import AppLayout from "../components/layout/AppLayout";
 import InstrumentPanel from "../components/ui/InstrumentPanel";
 import StatusCode from "../components/ui/StatusCode";
@@ -23,6 +43,7 @@ import {
 
 const TABS = [
   { id: "overview", label: "OVERVIEW" },
+  { id: "records", label: "MEDICAL RECORDS" },
   { id: "conditions", label: "CONDITIONS" },
   { id: "medications", label: "MEDICATIONS" },
   { id: "labs", label: "LABS" },
@@ -31,6 +52,24 @@ const TABS = [
   { id: "allergies", label: "ALLERGIES" },
   { id: "timeline", label: "TIMELINE" },
 ];
+
+const RECORD_TYPES = [
+  "X-Ray",
+  "MRI",
+  "CT Scan",
+  "Medical Report",
+  "Prescription",
+  "Other",
+];
+
+const RECORD_TYPE_ICONS = {
+  "X-Ray": "🩻",
+  "MRI": "🧠",
+  "CT Scan": "🩻",
+  "Medical Report": "📄",
+  "Prescription": "💊",
+  "Other": "📁",
+};
 
 const SEVERITY_SIGNAL = {
   severe: "critical",
@@ -60,6 +99,7 @@ export default function PatientDashboard() {
   const [conditionFilter, setConditionFilter] = useState("ALL");
   const [visitTab, setVisitTab] = useState("upcoming");
 
+  // Patient profile data
   const [patient, setPatient] = useState(defaultPatient);
   const [conditionsList, setConditionsList] = useState(defaultConditions);
   const [allergiesList, setAllergiesList] = useState(defaultAllergies);
@@ -69,8 +109,30 @@ export default function PatientDashboard() {
   const [visitsList, setVisitsList] = useState(defaultVisits);
   const [timelineList, setTimelineList] = useState(defaultTimeline);
 
+  // Medical records state
+  const [medicalRecords, setMedicalRecords] = useState([]);
+  const [recordsLoading, setRecordsLoading] = useState(false);
+  const [recordFilter, setRecordFilter] = useState("ALL");
+  const [uploadModalOpen, setUploadModalOpen] = useState(false);
+  const [uploading, setUploading] = useState(false);
+  const [uploadError, setUploadError] = useState("");
+  const [uploadForm, setUploadForm] = useState({
+    title: "",
+    recordType: "X-Ray",
+    recordDate: new Date().toISOString().split("T")[0],
+    description: "",
+    file: null,
+  });
+
+  // Image Viewer Modal / Lightbox state
+  const [previewRecord, setPreviewRecord] = useState(null);
+  const [previewBlobUrl, setPreviewBlobUrl] = useState(null);
+  const [previewLoading, setPreviewLoading] = useState(false);
+  const [zoomLevel, setZoomLevel] = useState(1);
+
   useEffect(() => {
     fetchRealPatientData();
+    fetchMedicalRecords();
   }, []);
 
   const fetchRealPatientData = async () => {
@@ -100,6 +162,149 @@ export default function PatientDashboard() {
     }
   };
 
+  const fetchMedicalRecords = async () => {
+    try {
+      setRecordsLoading(true);
+      const res = await api.get('/patients/medical-records').catch(() => null);
+      if (res && res.data && res.data.success) {
+        setMedicalRecords(res.data.records || []);
+      }
+    } catch (e) {
+      console.warn("Could not load medical records from backend");
+    } finally {
+      setRecordsLoading(false);
+    }
+  };
+
+  // Upload Record
+  const handleUploadSubmit = async (e) => {
+    e.preventDefault();
+    setUploadError("");
+
+    if (!uploadForm.title.trim()) {
+      setUploadError("Please enter a record title.");
+      return;
+    }
+    if (!uploadForm.file) {
+      setUploadError("Please select a file to upload (JPG, PNG, WEBP, or PDF).");
+      return;
+    }
+    if (uploadForm.file.size > 10 * 1024 * 1024) {
+      setUploadError("File size exceeds the 10 MB limit.");
+      return;
+    }
+
+    const ext = uploadForm.file.name.split('.').pop().toLowerCase();
+    if (!['jpg', 'jpeg', 'png', 'webp', 'pdf'].includes(ext)) {
+      setUploadError("Invalid file type. Supported types: JPG, PNG, WEBP, PDF.");
+      return;
+    }
+
+    try {
+      setUploading(true);
+      const formData = new FormData();
+      formData.append('file', uploadForm.file);
+      formData.append('title', uploadForm.title.trim());
+      formData.append('recordType', uploadForm.recordType);
+      formData.append('recordDate', uploadForm.recordDate || new Date().toISOString().split('T')[0]);
+      formData.append('description', uploadForm.description.trim());
+
+      const res = await api.post('/patients/medical-records', formData);
+
+      if (res && res.data && res.data.success) {
+        toast.success("Medical record uploaded successfully.");
+        setUploadModalOpen(false);
+        setUploadForm({
+          title: "",
+          recordType: "X-Ray",
+          recordDate: new Date().toISOString().split("T")[0],
+          description: "",
+          file: null,
+        });
+        await fetchMedicalRecords();
+        setActiveTab("records");
+      } else {
+        setUploadError(res?.data?.message || "Failed to upload medical record.");
+      }
+    } catch (err) {
+      const msg = err.response?.data?.message || "Failed to upload medical record. Please try again.";
+      setUploadError(msg);
+    } finally {
+      setUploading(false);
+    }
+  };
+
+  // View Record (Image or PDF)
+  const handleViewRecord = async (record) => {
+    const ext = (record.attachmentUrl || '').split('.').pop().toLowerCase();
+    const isImage = ['jpg', 'jpeg', 'png', 'webp'].includes(ext);
+    const isPdf = ext === 'pdf';
+
+    try {
+      setPreviewLoading(true);
+      setPreviewRecord(record);
+      setZoomLevel(1);
+
+      const res = await api.get(`/patients/medical-records/${record.id}/file`, {
+        responseType: 'blob',
+      });
+
+      const blobType = isImage ? `image/${ext === 'jpg' ? 'jpeg' : ext}` : 'application/pdf';
+      const blob = new Blob([res.data], { type: blobType });
+      const blobUrl = URL.createObjectURL(blob);
+
+      if (isPdf) {
+        // Open PDF directly in a new tab
+        window.open(blobUrl, '_blank');
+        setPreviewRecord(null);
+      } else {
+        // Open image in the built-in Lightbox viewer
+        setPreviewBlobUrl(blobUrl);
+      }
+    } catch (err) {
+      toast.error("Failed to load file preview. You can use Download instead.");
+      setPreviewRecord(null);
+    } finally {
+      setPreviewLoading(false);
+    }
+  };
+
+  // Download Record File
+  const handleDownloadRecord = async (record) => {
+    try {
+      toast.info(`Downloading "${record.title}"...`);
+      const res = await api.get(`/patients/medical-records/${record.id}/file?download=true`, {
+        responseType: 'blob',
+      });
+
+      const ext = (record.attachmentUrl || '').split('.').pop().toLowerCase() || 'bin';
+      const cleanTitle = (record.title || 'medical-record').replace(/[^a-zA-Z0-9_-]/g, '_');
+      const filename = `${cleanTitle}.${ext}`;
+
+      const blob = new Blob([res.data]);
+      const url = URL.createObjectURL(blob);
+      const a = document.createElement('a');
+      a.href = url;
+      a.download = filename;
+      document.body.appendChild(a);
+      a.click();
+      document.body.removeChild(a);
+      URL.revokeObjectURL(url);
+      toast.success(`"${record.title}" downloaded successfully.`);
+    } catch (err) {
+      toast.error("Failed to download record file.");
+    }
+  };
+
+  const closeImageViewer = () => {
+    if (previewBlobUrl) {
+      URL.revokeObjectURL(previewBlobUrl);
+    }
+    setPreviewBlobUrl(null);
+    setPreviewRecord(null);
+    setZoomLevel(1);
+  };
+
   const activeConditions = conditionsList.filter((c) => (c.status || '').toLowerCase() !== "recovered").length;
   const activeRx = medicationsList.filter((m) => (m.status || '').toLowerCase() === "active" || m.endDate === "Ongoing").length;
   const pendingLabs = labReportsList.filter((l) => (l.status || '').toLowerCase() === "pending").length;
@@ -114,6 +319,10 @@ export default function PatientDashboard() {
     .join("")
     .slice(0, 2)
     .toUpperCase();
+
+  const filteredRecords = recordFilter === "ALL"
+    ? medicalRecords
+    : medicalRecords.filter((r) => (r.recordType || "").toLowerCase() === recordFilter.toLowerCase());
 
   return (
     <AppLayout tabs={TABS} activeTab={activeTab} onTabChange={handleTabChange}>
@@ -171,9 +380,19 @@ export default function PatientDashboard() {
               ))}
             </div>
           </div>
-          <Button variant="secondary" size="sm" onClick={() => setEditOpen(true)} style={{ display: "flex", alignItems: "center", gap: "0.4rem" }}>
-            <Edit size={11} /> EDIT PROFILE
-          </Button>
+          <div style={{ display: "flex", gap: "0.5rem" }}>
+            <Button
+              variant="primary"
+              size="sm"
+              onClick={() => { setUploadError(""); setUploadModalOpen(true); }}
+              style={{ display: "flex", alignItems: "center", gap: "0.4rem" }}
+            >
+              <Upload size={12} /> ADD MEDICAL RECORD
+            </Button>
+            <Button variant="secondary" size="sm" onClick={() => setEditOpen(true)} style={{ display: "flex", alignItems: "center", gap: "0.4rem" }}>
+              <Edit size={11} /> EDIT PROFILE
+            </Button>
+          </div>
         </div>
 
         {/* OVERVIEW TAB */}
@@ -183,7 +402,7 @@ export default function PatientDashboard() {
             <div
               style={{
                 display: "grid",
-                gridTemplateColumns: "repeat(5, 1fr)",
+                gridTemplateColumns: "repeat(6, 1fr)",
                 border: "1px solid var(--color-border)",
                 borderRadius: "10px",
                 overflow: "hidden",
@@ -193,6 +412,7 @@ export default function PatientDashboard() {
               className="summary-grid"
             >
               {[
+                { label: "MEDICAL RECORDS", value: medicalRecords.length, signal: "info", icon: FileImage, tab: "records" },
                 { label: "CONDITIONS", value: activeConditions, signal: "warning", icon: Heart, tab: "conditions" },
                 { label: "MEDICATIONS", value: activeRx, signal: "info", icon: Pill, tab: "medications" },
                 { label: "PENDING LABS", value: pendingLabs, signal: "warning", icon: FlaskConical, tab: "labs" },
@@ -204,7 +424,7 @@ export default function PatientDashboard() {
                   onClick={() => setActiveTab(tab)}
                   style={{
                     padding: "1.25rem",
-                    borderRight: i < 4 ? "1px solid var(--color-border)" : "none",
+                    borderRight: i < 5 ? "1px solid var(--color-border)" : "none",
                     cursor: "pointer",
                     display: "flex",
                     flexDirection: "column",
@@ -251,6 +471,79 @@ export default function PatientDashboard() {
             )}
 
             <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: "1.25rem" }} className="overview-grid">
+              {/* Medical Records Instrument Panel */}
+              <InstrumentPanel
+                title="Recent Medical Records & Scans"
+                subtitle="DIAGNOSTIC ARCHIVE"
+                channel="info"
+                action={
+                  <div style={{ display: "flex", gap: "0.4rem" }}>
+                    <Button variant="primary" size="sm" onClick={() => { setUploadError(""); setUploadModalOpen(true); }}>
+                      <Plus size={11} /> UPLOAD
+                    </Button>
+                    <Button variant="secondary" size="sm" onClick={() => setActiveTab("records")}>
+                      ALL RECORDS
+                    </Button>
+                  </div>
+                }
+              >
+                {medicalRecords.length === 0 ? (
+                  <div style={{ padding: "1.25rem 1rem", textAlign: "center" }}>
+                    <p className="type-body" style={{ color: "var(--color-ink-secondary)", fontSize: "0.85rem", marginBottom: "0.75rem" }}>
+                      No medical records uploaded yet.
+                    </p>
+                    <Button variant="secondary" size="sm" onClick={() => { setUploadError(""); setUploadModalOpen(true); }}>
+                      <Upload size={11} /> Upload First Record
+                    </Button>
+                  </div>
+                ) : (
+                  medicalRecords.slice(0, 4).map((r) => {
+                    const ext = (r.attachmentUrl || "").split(".").pop().toLowerCase();
+                    const isImg = ["jpg", "jpeg", "png", "webp"].includes(ext);
+                    const icon = RECORD_TYPE_ICONS[r.recordType] || "📄";
+
+                    return (
+                      <div key={r.id} className="data-row" style={{ display: "flex", justifyContent: "space-between", alignItems: "center", gap: "0.75rem" }}>
+                        <div style={{ flex: 1, minWidth: 0 }}>
+                          <div style={{ display: "flex", alignItems: "center", gap: "0.5rem" }}>
+                            <span style={{ fontSize: "1rem" }}>{icon}</span>
+                            <span className="type-value" style={{ color: "var(--color-ink)", fontSize: "0.85rem", fontWeight: 600, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>
+                              {r.title}
+                            </span>
+                            <span style={{ fontSize: "0.65rem", padding: "0.1rem 0.4rem", borderRadius: "4px", background: "var(--color-surface-alt)", border: "1px solid var(--color-border)", color: "var(--color-ink-secondary)", fontWeight: 600 }}>
+                              {r.recordType}
+                            </span>
+                          </div>
+                          <div className="type-micro" style={{ color: "var(--color-ink-secondary)", marginTop: "0.2rem" }}>
+                            {r.recordDate ? new Date(r.recordDate).toLocaleDateString("en-IN", { day: "numeric", month: "short", year: "numeric" }) : "Recent"}
+                            {ext ? ` · ${ext.toUpperCase()}` : ""}
+                          </div>
+                        </div>
+                        <div style={{ display: "flex", gap: "0.35rem", flexShrink: 0 }}>
+                          <Button
+                            variant="secondary"
+                            size="sm"
+                            onClick={() => handleViewRecord(r)}
+                            style={{ display: "flex", alignItems: "center", gap: "0.3rem", padding: "0.25rem 0.55rem", fontSize: "0.75rem" }}
+                          >
+                            <Eye size={11} /> {isImg ? "View Image" : "View Record"}
+                          </Button>
+                          <Button
+                            variant="secondary"
+                            size="sm"
+                            onClick={() => handleDownloadRecord(r)}
+                            style={{ display: "flex", alignItems: "center", gap: "0.3rem", padding: "0.25rem 0.55rem", fontSize: "0.75rem" }}
+                            title="Download File"
+                          >
+                            <Download size={11} />
+                          </Button>
+                        </div>
+                      </div>
+                    );
+                  })
+                )}
+              </InstrumentPanel>
+
               {/* Recent lab results */}
               <InstrumentPanel title="Recent Lab Results" subtitle="LABORATORY" channel="info"
                 action={<Button variant="secondary" size="sm" onClick={() => setActiveTab("labs")}>ALL LABS</Button>}>
@@ -292,21 +585,206 @@ export default function PatientDashboard() {
                   </div>
                 ))}
               </InstrumentPanel>
-
-              {/* Health vitals snapshot */}
-              <InstrumentPanel title="Wellness Snapshot" subtitle="LAST RECORDED" channel="muted">
-                {[
-                  { label: "STEPS TODAY", value: "6,420", signal: "warning" },
-                  { label: "SLEEP", value: "7h 15m", signal: "normal" },
-                  { label: "HYDRATION", value: "2.1 L", signal: "warning" },
-                  { label: "RESTING HEART RATE", value: "72 bpm", signal: "normal" },
-                  { label: "BLOOD PRESSURE", value: "132 / 86 mmHg", signal: "warning" },
-                  { label: "BLOOD GLUCOSE (FBG)", value: "118 mg/dL", signal: "normal" },
-                ].map(({ label, value, signal }) => (
-                  <DataRow key={label} label={label} value={<span className={`status-${signal}`}>{value}</span>} />
-                ))}
-              </InstrumentPanel>
             </div>
+          </div>
+        )}
+
+        {/* MEDICAL RECORDS TAB */}
+        {activeTab === "records" && (
+          <div className="fade-in">
+            {/* Action Bar & Filter Pills */}
+            <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: "1.25rem", flexWrap: "wrap", gap: "1rem" }}>
+              <div style={{ display: "flex", gap: "0.5rem", flexWrap: "wrap" }}>
+                {["ALL", ...RECORD_TYPES].map((f) => (
+                  <button
+                    key={f}
+                    onClick={() => setRecordFilter(f)}
+                    className={recordFilter === f ? "filter-pill-active" : "filter-pill"}
+                  >
+                    {f === "ALL" ? "ALL RECORDS" : f.toUpperCase()}
+                  </button>
+                ))}
+              </div>
+              <Button
+                variant="primary"
+                onClick={() => { setUploadError(""); setUploadModalOpen(true); }}
+                style={{ display: "flex", alignItems: "center", gap: "0.4rem" }}
+              >
+                <Plus size={13} /> UPLOAD MEDICAL RECORD
+              </Button>
+            </div>
+
+            {/* Records List or Empty State */}
+            {recordsLoading ? (
+              <div style={{ padding: "3rem", textAlign: "center", background: "var(--color-panel)", border: "1px solid var(--color-border)", borderRadius: "8px" }}>
+                <span className="type-body" style={{ color: "var(--color-ink-secondary)" }}>Loading medical records...</span>
+              </div>
+            ) : filteredRecords.length === 0 ? (
+              <div
+                style={{
+                  background: "var(--color-panel)",
+                  border: "1px solid var(--color-border)",
+                  borderRadius: "10px",
+                  padding: "3.5rem 1.5rem",
+                  textAlign: "center",
+                  display: "flex",
+                  flexDirection: "column",
+                  alignItems: "center",
+                  gap: "0.75rem",
+                }}
+              >
+                <div
+                  style={{
+                    width: "48px",
+                    height: "48px",
+                    borderRadius: "12px",
+                    background: "var(--color-surface-alt)",
+                    display: "flex",
+                    alignItems: "center",
+                    justifyContent: "center",
+                    color: "var(--color-ink-muted)",
+                    marginBottom: "0.25rem",
+                  }}
+                >
+                  <FolderOpen size={24} />
+                </div>
+                <div style={{ fontFamily: "'Plus Jakarta Sans', sans-serif", fontWeight: 700, fontSize: "1.1rem", color: "var(--color-ink)" }}>
+                  No medical records uploaded yet.
+                </div>
+                <p className="type-body" style={{ color: "var(--color-ink-secondary)", maxWidth: "420px", fontSize: "0.85rem" }}>
+                  Upload your diagnostic images (X-rays, MRIs, CT scans), prescription documents, or lab reports to store them in your longitudinal health record.
+                </p>
+                <Button
+                  variant="primary"
+                  onClick={() => { setUploadError(""); setUploadModalOpen(true); }}
+                  style={{ display: "flex", alignItems: "center", gap: "0.4rem", marginTop: "0.5rem" }}
+                >
+                  <Upload size={12} /> Upload Your First Record
+                </Button>
+              </div>
+            ) : (
+              <div style={{ display: "flex", flexDirection: "column", gap: "0.75rem" }}>
+                {filteredRecords.map((r) => {
+                  const ext = (r.attachmentUrl || "").split(".").pop().toLowerCase();
+                  const isImg = ["jpg", "jpeg", "png", "webp"].includes(ext);
+                  const icon = RECORD_TYPE_ICONS[r.recordType] || "📄";
+                  const formattedDate = r.recordDate
+                    ? new Date(r.recordDate).toLocaleDateString("en-IN", {
+                        day: "numeric",
+                        month: "short",
+                        year: "numeric",
+                      })
+                    : "Unknown Date";
+
+                  return (
+                    <div
+                      key={r.id}
+                      className="instrument-panel channel-info"
+                      style={{ background: "var(--color-panel)" }}
+                    >
+                      <div style={{ padding: "1.25rem" }}>
+                        <div style={{ display: "flex", justifyContent: "space-between", alignItems: "flex-start", gap: "1rem", flexWrap: "wrap" }}>
+                          <div style={{ flex: 1, minWidth: "260px" }}>
+                            {/* Record Header */}
+                            <div style={{ display: "flex", alignItems: "center", gap: "0.6rem", marginBottom: "0.4rem", flexWrap: "wrap" }}>
+                              <span style={{ fontSize: "1.25rem", lineHeight: 1 }}>{icon}</span>
+                              <span
+                                style={{
+                                  fontFamily: "'Plus Jakarta Sans', sans-serif",
+                                  fontWeight: 700,
+                                  fontSize: "1.05rem",
+                                  color: "var(--color-ink)",
+                                  letterSpacing: "-0.015em",
+                                }}
+                              >
+                                {r.title}
+                              </span>
+                              <span
+                                style={{
+                                  background: "var(--color-surface-alt)",
+                                  color: "var(--color-ink-secondary)",
+                                  padding: "0.15rem 0.5rem",
+                                  borderRadius: "4px",
+                                  fontFamily: "'Inter', sans-serif",
+                                  fontSize: "0.7rem",
+                                  fontWeight: 600,
+                                  letterSpacing: "0.04em",
+                                  border: "1px solid var(--color-border)",
+                                }}
+                              >
+                                {r.recordType}
+                              </span>
+                              {ext && (
+                                <span
+                                  style={{
+                                    background: isImg ? "rgba(37,99,235,0.08)" : "rgba(220,38,38,0.08)",
+                                    color: isImg ? "#2563EB" : "#DC2626",
+                                    padding: "0.15rem 0.45rem",
+                                    borderRadius: "4px",
+                                    fontFamily: "'JetBrains Mono', monospace",
+                                    fontSize: "0.65rem",
+                                    fontWeight: 700,
+                                  }}
+                                >
+                                  {ext.toUpperCase()}
+                                </span>
+                              )}
+                            </div>
+
+                            {/* Date and details */}
+                            <div style={{ display: "flex", gap: "1rem", flexWrap: "wrap", marginBottom: "0.5rem" }}>
+                              <span className="type-label" style={{ color: "var(--color-ink-secondary)" }}>
+                                DATE: {formattedDate}
+                              </span>
+                              {r.doctor?.user?.fullName && (
+                                <span className="type-label" style={{ color: "var(--color-ink-secondary)" }}>
+                                  PHYSICIAN: {r.doctor.user.fullName}
+                                </span>
+                              )}
+                            </div>
+
+                            {/* Description */}
+                            {r.description && (
+                              <div
+                                className="type-body"
+                                style={{
+                                  color: "var(--color-ink-secondary)",
+                                  fontSize: "0.85rem",
+                                  lineHeight: 1.5,
+                                  marginTop: "0.35rem",
+                                }}
+                              >
+                                {r.description}
+                              </div>
+                            )}
+                          </div>
+
+                          {/* Action Buttons */}
+                          <div style={{ display: "flex", gap: "0.5rem", alignItems: "center", flexShrink: 0 }}>
+                            <Button
+                              variant="primary"
+                              size="sm"
+                              onClick={() => handleViewRecord(r)}
+                              style={{ display: "flex", alignItems: "center", gap: "0.4rem" }}
+                            >
+                              <Eye size={12} /> {isImg ? "View Image" : "View Record"}
+                            </Button>
+                            <Button
+                              variant="secondary"
+                              size="sm"
+                              onClick={() => handleDownloadRecord(r)}
+                              style={{ display: "flex", alignItems: "center", gap: "0.4rem" }}
+                            >
+                              <Download size={12} /> Download
+                            </Button>
+                          </div>
+                        </div>
+                      </div>
+                    </div>
+                  );
+                })}
+              </div>
+            )}
           </div>
         )}
 
@@ -546,7 +1024,7 @@ export default function PatientDashboard() {
                   <div style={{ display: "flex", justifyContent: "space-between", gap: "1rem", flexWrap: "wrap" }}>
                     <div style={{ flex: 1 }}>
                       <div style={{ display: "flex", gap: "0.75rem", alignItems: "baseline", marginBottom: "0.3rem" }}>
-                        <span className="type-value" style={{ color: "var(--color-ink)", fontSize: "0.95rem" }}>{a.allergen}</span>
+                        <span className="type-value" style={{ color: "var(--color-ink)", fontSize: "0.95rem" }}>{a.allergen || a.name}</span>
                         <span className="type-id" style={{ color: "var(--color-ink-secondary)" }}>{a.category}</span>
                         {(a.severity || '').toLowerCase() === "severe" && <span className="status-critical pulse-signal">● SEVERE</span>}
                       </div>
@@ -624,6 +1102,312 @@ export default function PatientDashboard() {
           </div>
         )}
       </div>
+
+      {/* Upload Medical Record Modal */}
+      <Modal
+        isOpen={uploadModalOpen}
+        onClose={() => setUploadModalOpen(false)}
+        title="Upload Medical Record"
+        subtitle="LONGITUDINAL HEALTH ARCHIVE"
+      >
+        <form onSubmit={handleUploadSubmit} style={{ display: "flex", flexDirection: "column", gap: "1rem" }}>
+          {uploadError && (
+            <div
+              style={{
+                background: "var(--color-signal-critical-bg)",
+                border: "1px solid var(--color-signal-critical-border)",
+                padding: "0.75rem 1rem",
+                borderRadius: "6px",
+                color: "var(--color-signal-critical)",
+                fontSize: "0.85rem",
+                display: "flex",
+                alignItems: "center",
+                gap: "0.5rem",
+              }}
+            >
+              <AlertTriangle size={15} />
+              <span>{uploadError}</span>
+            </div>
+          )}
+
+          <PrecisionInput
+            label="Record Title *"
+            placeholder="e.g. Chest X-Ray - PA View, MRI Brain Scan"
+            value={uploadForm.title}
+            onChange={(e) => setUploadForm({ ...uploadForm, title: e.target.value })}
+            required
+          />
+
+          <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: "1rem" }}>
+            <div style={{ display: "flex", flexDirection: "column", gap: "0.35rem" }}>
+              <label className="type-label">Record Type *</label>
+              <select
+                className="precision-input"
+                value={uploadForm.recordType}
+                onChange={(e) => setUploadForm({ ...uploadForm, recordType: e.target.value })}
+                style={{ padding: "0.55rem 0.75rem" }}
+              >
+                {RECORD_TYPES.map((t) => (
+                  <option key={t} value={t}>
+                    {RECORD_TYPE_ICONS[t]} {t}
+                  </option>
+                ))}
+              </select>
+            </div>
+
+            <div style={{ display: "flex", flexDirection: "column", gap: "0.35rem" }}>
+              <label className="type-label">Record Date *</label>
+              <input
+                type="date"
+                className="precision-input"
+                value={uploadForm.recordDate}
+                onChange={(e) => setUploadForm({ ...uploadForm, recordDate: e.target.value })}
+                style={{ padding: "0.55rem 0.75rem" }}
+                required
+              />
+            </div>
+          </div>
+
+          <div style={{ display: "flex", flexDirection: "column", gap: "0.35rem" }}>
+            <label className="type-label">Clinical Notes / Description (Optional)</label>
+            <textarea
+              className="precision-input"
+              rows={3}
+              placeholder="e.g. Follow-up chest radiograph showing clear lung fields, no active consolidation."
+              value={uploadForm.description}
+              onChange={(e) => setUploadForm({ ...uploadForm, description: e.target.value })}
+              style={{ resize: "vertical", fontFamily: "inherit" }}
+            />
+          </div>
+
+          {/* File Upload Dropzone */}
+          <div style={{ display: "flex", flexDirection: "column", gap: "0.35rem" }}>
+            <label className="type-label">Attach File * (JPG, PNG, WEBP, PDF — Max 10MB)</label>
+            <div
+              style={{
+                border: "2px dashed var(--color-border)",
+                borderRadius: "8px",
+                padding: "1.5rem",
+                textAlign: "center",
+                background: "var(--color-surface-alt)",
+                cursor: "pointer",
+                position: "relative",
+              }}
+              onClick={() => document.getElementById("record-file-input")?.click()}
+            >
+              <input
+                id="record-file-input"
+                type="file"
+                accept=".jpg,.jpeg,.png,.webp,.pdf"
+                style={{ display: "none" }}
+                onChange={(e) => {
+                  if (e.target.files && e.target.files[0]) {
+                    setUploadForm({ ...uploadForm, file: e.target.files[0] });
+                    setUploadError("");
+                  }
+                }}
+              />
+              <Upload size={24} style={{ color: "var(--color-accent-primary)", margin: "0 auto 0.5rem auto" }} />
+              {uploadForm.file ? (
+                <div>
+                  <div style={{ fontFamily: "'Inter', sans-serif", fontWeight: 600, fontSize: "0.9rem", color: "var(--color-ink)" }}>
+                    {uploadForm.file.name}
+                  </div>
+                  <div className="type-micro" style={{ color: "var(--color-ink-secondary)", marginTop: "0.2rem" }}>
+                    {(uploadForm.file.size / (1024 * 1024)).toFixed(2)} MB · Click to change file
+                  </div>
+                </div>
+              ) : (
+                <div>
+                  <div style={{ fontFamily: "'Inter', sans-serif", fontWeight: 600, fontSize: "0.85rem", color: "var(--color-ink)" }}>
+                    Click to browse or drop file here
+                  </div>
+                  <div className="type-micro" style={{ color: "var(--color-ink-muted)", marginTop: "0.2rem" }}>
+                    Supported: JPG, PNG, WEBP, PDF (Max 10 MB)
+                  </div>
+                </div>
+              )}
+            </div>
+          </div>
+
+          <div style={{ display: "flex", gap: "0.75rem", marginTop: "0.5rem" }}>
+            <Button
+              type="button"
+              variant="secondary"
+              onClick={() => setUploadModalOpen(false)}
+              disabled={uploading}
+            >
+              CANCEL
+            </Button>
+            <Button
+              type="submit"
+              variant="primary"
+              disabled={uploading}
+              style={{ flex: 1, justifyContent: "center" }}
+            >
+              {uploading ? "UPLOADING FILE..." : "CONFIRM & UPLOAD"}
+            </Button>
+          </div>
+        </form>
+      </Modal>
+
+      {/* Image Lightbox / Full Viewer Modal */}
+      {previewRecord && (
+        <div
+          style={{
+            position: "fixed",
+            inset: 0,
+            zIndex: 1000,
+            background: "rgba(0, 0, 0, 0.85)",
+            backdropFilter: "blur(6px)",
+            display: "flex",
+            flexDirection: "column",
+            alignItems: "center",
+            justifyContent: "center",
+            padding: "1rem",
+          }}
+          onClick={closeImageViewer}
+        >
+          {/* Viewer Container */}
+          <div
+            style={{
+              background: "var(--color-panel)",
+              borderRadius: "12px",
+              border: "1px solid var(--color-border)",
+              width: "100%",
+              maxWidth: "920px",
+              maxHeight: "90vh",
+              display: "flex",
+              flexDirection: "column",
+              overflow: "hidden",
+              boxShadow: "0 25px 50px -12px rgba(0, 0, 0, 0.5)",
+            }}
+            onClick={(e) => e.stopPropagation()}
+          >
+            {/* Header */}
+            <div
+              style={{
+                padding: "1rem 1.25rem",
+                borderBottom: "1px solid var(--color-border)",
+                display: "flex",
+                alignItems: "center",
+                justifyContent: "space-between",
+                gap: "1rem",
+                background: "var(--color-surface)",
+              }}
+            >
+              <div>
+                <div style={{ display: "flex", alignItems: "center", gap: "0.5rem" }}>
+                  <span style={{ fontSize: "1.1rem" }}>{RECORD_TYPE_ICONS[previewRecord.recordType] || "🩻"}</span>
+                  <h3 style={{ fontFamily: "'Plus Jakarta Sans', sans-serif", fontWeight: 700, fontSize: "1.1rem", color: "var(--color-ink)" }}>
+                    {previewRecord.title}
+                  </h3>
+                  <span style={{ fontSize: "0.7rem", padding: "0.15rem 0.5rem", borderRadius: "4px", background: "var(--color-surface-alt)", border: "1px solid var(--color-border)", color: "var(--color-ink-secondary)", fontWeight: 600 }}>
+                    {previewRecord.recordType}
+                  </span>
+                </div>
+                <div className="type-micro" style={{ color: "var(--color-ink-secondary)", marginTop: "0.15rem" }}>
+                  {previewRecord.recordDate ? new Date(previewRecord.recordDate).toLocaleDateString("en-IN", { day: "numeric", month: "short", year: "numeric" }) : ""}
+                </div>
+              </div>
+
+              {/* Controls */}
+              <div style={{ display: "flex", alignItems: "center", gap: "0.5rem" }}>
+                <button
+                  onClick={() => setZoomLevel((z) => Math.max(0.5, z - 0.25))}
+                  title="Zoom Out"
+                  style={{ background: "var(--color-surface-alt)", border: "1px solid var(--color-border)", borderRadius: "6px", padding: "0.4rem", cursor: "pointer", color: "var(--color-ink)" }}
+                >
+                  <ZoomOut size={15} />
+                </button>
+                <span className="type-micro" style={{ minWidth: "40px", textAlign: "center" }}>{Math.round(zoomLevel * 100)}%</span>
+                <button
+                  onClick={() => setZoomLevel((z) => Math.min(3, z + 0.25))}
+                  title="Zoom In"
+                  style={{ background: "var(--color-surface-alt)", border: "1px solid var(--color-border)", borderRadius: "6px", padding: "0.4rem", cursor: "pointer", color: "var(--color-ink)" }}
+                >
+                  <ZoomIn size={15} />
+                </button>
+                <button
+                  onClick={() => setZoomLevel(1)}
+                  title="Reset Zoom"
+                  style={{ background: "var(--color-surface-alt)", border: "1px solid var(--color-border)", borderRadius: "6px", padding: "0.4rem", cursor: "pointer", color: "var(--color-ink)" }}
+                >
+                  <RotateCcw size={15} />
+                </button>
+                <Button
+                  variant="secondary"
+                  size="sm"
+                  onClick={() => handleDownloadRecord(previewRecord)}
+                  style={{ display: "flex", alignItems: "center", gap: "0.3rem", marginLeft: "0.25rem" }}
+                >
+                  <Download size={12} /> Download
+                </Button>
+                <button
+                  onClick={closeImageViewer}
+                  style={{
+                    background: "none",
+                    border: "none",
+                    cursor: "pointer",
+                    padding: "0.4rem",
+                    color: "var(--color-ink-muted)",
+                    borderRadius: "6px",
+                    display: "flex",
+                  }}
+                  title="Close (Esc)"
+                >
+                  <X size={18} />
+                </button>
+              </div>
+            </div>
+
+            {/* Image Canvas */}
+            <div
+              style={{
+                flex: 1,
+                overflow: "auto",
+                padding: "1.5rem",
+                display: "flex",
+                alignItems: "center",
+                justifyContent: "center",
+                minHeight: "350px",
+                maxHeight: "65vh",
+                background: "#0f172a",
+              }}
+            >
+              {previewLoading ? (
+                <div style={{ color: "white", fontFamily: "'Inter', sans-serif", fontSize: "0.9rem" }}>
+                  Loading image stream...
+                </div>
+              ) : previewBlobUrl ? (
+                <img
+                  src={previewBlobUrl}
+                  alt={previewRecord.title}
+                  style={{
+                    maxWidth: "100%",
+                    maxHeight: "60vh",
+                    transform: `scale(${zoomLevel})`,
+                    transformOrigin: "center center",
+                    transition: "transform 150ms ease",
+                    borderRadius: "4px",
+                    boxShadow: "0 10px 25px rgba(0,0,0,0.5)",
+                  }}
+                />
+              ) : (
+                <div style={{ color: "white" }}>Failed to load image preview.</div>
+              )}
+            </div>
+
+            {/* Viewer Footer */}
+            {previewRecord.description && (
+              <div style={{ padding: "0.75rem 1.25rem", borderTop: "1px solid var(--color-border)", background: "var(--color-surface)" }}>
+                <span className="type-micro" style={{ color: "var(--color-ink-muted)", fontWeight: 600 }}>CLINICAL NOTES: </span>
+                <span className="type-body" style={{ color: "var(--color-ink)", fontSize: "0.85rem" }}>{previewRecord.description}</span>
+              </div>
+            )}
+          </div>
+        </div>
+      )}
 
       {/* Edit Profile Modal */}
       <Modal isOpen={editOpen} onClose={() => setEditOpen(false)} title="Edit Patient Profile" subtitle="PROFILE MANAGEMENT">

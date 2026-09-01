@@ -1,4 +1,14 @@
+const path = require('path');
+const fs = require('fs');
 const prisma = require('../config/prisma');
+
+const MIME_TYPES = {
+  '.jpg': 'image/jpeg',
+  '.jpeg': 'image/jpeg',
+  '.png': 'image/png',
+  '.webp': 'image/webp',
+  '.pdf': 'application/pdf',
+};
 
 // Get Patient Profile & Health Card Details
 const getPatientProfile = async (req, res, next) => {
@@ -322,10 +332,203 @@ const updatePatientProfile = async (req, res, next) => {
   }
 };
 
+// Upload Medical Record (File + Metadata)
+const uploadMedicalRecord = async (req, res, next) => {
+  try {
+    if (!req.file) {
+      return res.status(400).json({
+        success: false,
+        message: 'No file uploaded. Please attach an image (JPG, PNG, WEBP) or PDF file (max 10MB).',
+      });
+    }
+
+    const { title, recordType = 'Medical Report', description, recordDate } = req.body;
+
+    if (!title || !title.trim()) {
+      if (req.file.path && fs.existsSync(req.file.path)) {
+        try { fs.unlinkSync(req.file.path); } catch (e) {}
+      }
+      return res.status(400).json({
+        success: false,
+        message: 'Record title is required.',
+      });
+    }
+
+    let patient = req.user.patientProfile;
+    if (!patient) {
+      patient = await prisma.patient.findUnique({
+        where: { userId: req.user.id },
+      });
+    }
+
+    if (!patient) {
+      if (req.file.path && fs.existsSync(req.file.path)) {
+        try { fs.unlinkSync(req.file.path); } catch (e) {}
+      }
+      return res.status(404).json({
+        success: false,
+        message: 'Patient profile not found for authenticated user.',
+      });
+    }
+
+    // Relative attachment reference (safe, portable, no absolute path)
+    const attachmentUrl = `medical-records/${req.file.filename}`;
+
+    const record = await prisma.medicalRecord.create({
+      data: {
+        patientId: patient.id,
+        recordType: recordType || 'Medical Report',
+        title: title.trim(),
+        description: description ? description.trim() : '',
+        attachmentUrl: attachmentUrl,
+        recordDate: recordDate ? new Date(recordDate) : new Date(),
+      },
+    });
+
+    // Audit log
+    await prisma.auditLog.create({
+      data: {
+        userId: req.user.id,
+        action: 'UPLOAD_MEDICAL_RECORD',
+        resource: 'MEDICAL_RECORD',
+        details: `Uploaded ${record.recordType}: ${record.title} (${req.file.originalname})`,
+      },
+    });
+
+    res.status(201).json({
+      success: true,
+      message: 'Medical record uploaded successfully.',
+      record,
+    });
+  } catch (error) {
+    if (req.file && req.file.path && fs.existsSync(req.file.path)) {
+      try { fs.unlinkSync(req.file.path); } catch (e) {}
+    }
+    next(error);
+  }
+};
+
+// Get Medical Records for Authenticated Patient
+const getMedicalRecords = async (req, res, next) => {
+  try {
+    let patientId = null;
+
+    if (req.user.role === 'PATIENT') {
+      const patient = req.user.patientProfile || await prisma.patient.findUnique({ where: { userId: req.user.id } });
+      if (patient) patientId = patient.id;
+    } else if (req.query.patientId) {
+      patientId = req.query.patientId;
+    }
+
+    if (!patientId) {
+      return res.status(400).json({
+        success: false,
+        message: 'Patient ID required to fetch medical records.',
+      });
+    }
+
+    const records = await prisma.medicalRecord.findMany({
+      where: { patientId },
+      orderBy: { recordDate: 'desc' },
+      include: {
+        doctor: {
+          include: {
+            user: { select: { fullName: true, email: true } },
+          },
+        },
+      },
+    });
+
+    res.status(200).json({
+      success: true,
+      records,
+    });
+  } catch (error) {
+    next(error);
+  }
+};
+
+// Stream/Download Stored Medical Record File
+const getMedicalRecordFile = async (req, res, next) => {
+  try {
+    const { id } = req.params;
+
+    const record = await prisma.medicalRecord.findUnique({
+      where: { id },
+      include: {
+        patient: true,
+      },
+    });
+
+    if (!record) {
+      return res.status(404).json({
+        success: false,
+        message: 'Medical record not found.',
+      });
+    }
+
+    // Verify authorization
+    const isOwner = req.user.patientProfile && req.user.patientProfile.id === record.patientId;
+    const isOwnerByUserId = (await prisma.patient.findUnique({ where: { userId: req.user.id } }))?.id === record.patientId;
+    const isClinician = ['DOCTOR', 'SUPER_ADMIN', 'HOSPITAL_ADMIN'].includes(req.user.role);
+
+    if (!isOwner && !isOwnerByUserId && !isClinician) {
+      return res.status(403).json({
+        success: false,
+        message: 'Access denied. You do not have permission to view or download this file.',
+      });
+    }
+
+    if (!record.attachmentUrl) {
+      return res.status(404).json({
+        success: false,
+        message: 'No file attachment associated with this record.',
+      });
+    }
+
+    // Secure path resolution preventing traversal
+    const uploadsRoot = path.resolve(__dirname, '..', '..', 'uploads');
+    const safeRelPath = path.normalize(record.attachmentUrl).replace(/^(\.\.[\/\\])+/, '');
+    const absoluteFilePath = path.resolve(uploadsRoot, safeRelPath);
+
+    if (!absoluteFilePath.startsWith(uploadsRoot) || !fs.existsSync(absoluteFilePath)) {
+      return res.status(404).json({
+        success: false,
+        message: 'Attachment file not found on server.',
+      });
+    }
+
+    const ext = path.extname(absoluteFilePath).toLowerCase();
+    const contentType = MIME_TYPES[ext] || 'application/octet-stream';
+    const isDownload = req.query.download === 'true' || req.query.download === '1';
+
+    // Format safe download filename
+    const cleanTitle = record.title.replace(/[^a-zA-Z0-9_-]/g, '_');
+    const downloadFilename = `${cleanTitle}${ext}`;
+
+    if (isDownload) {
+      res.setHeader('Content-Disposition', `attachment; filename="${downloadFilename}"`);
+    } else {
+      res.setHeader('Content-Disposition', `inline; filename="${downloadFilename}"`);
+    }
+
+    res.setHeader('Content-Type', contentType);
+    res.setHeader('Cache-Control', 'private, no-cache, no-store, must-revalidate');
+
+    const fileStream = fs.createReadStream(absoluteFilePath);
+    fileStream.pipe(res);
+  } catch (error) {
+    next(error);
+  }
+};
+
 module.exports = {
   getPatientProfile,
   getUnifiedTimeline,
   bookAppointment,
   cancelAppointment,
   updatePatientProfile,
+  uploadMedicalRecord,
+  getMedicalRecords,
+  getMedicalRecordFile,
 };

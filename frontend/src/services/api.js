@@ -14,7 +14,20 @@ api.interceptors.request.use(
   (config) => {
     const token = localStorage.getItem('uhis_token');
     if (token) {
-      config.headers.Authorization = `Bearer ${token}`;
+      if (config.headers?.set) {
+        config.headers.set('Authorization', `Bearer ${token}`);
+      } else {
+        config.headers = config.headers || {};
+        config.headers.Authorization = `Bearer ${token}`;
+      }
+    }
+    // For FormData uploads, delete static application/json so Axios/browser sets multipart/form-data with the correct boundary
+    if (config.data instanceof FormData) {
+      if (config.headers?.delete) {
+        config.headers.delete('Content-Type');
+      } else if (config.headers) {
+        delete config.headers['Content-Type'];
+      }
     }
     return config;
   },
