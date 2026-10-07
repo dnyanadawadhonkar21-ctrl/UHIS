@@ -1,12 +1,12 @@
 import React, { useState } from "react";
 import { useNavigate } from "react-router-dom";
-import { HeartPulse, CheckCircle } from "lucide-react";
+import { HeartPulse, CheckCircle, AlertTriangle } from "lucide-react";
 import { useAuth } from "../context/AuthContext";
 import { useToast } from "../context/ToastContext";
 import Button from "../components/ui/Button";
 import PrecisionInput from "../components/ui/PrecisionInput";
 
-const STEPS = ["Account Setup", "Medical Profile", "ABHA Verification"];
+const STEPS = ["Account Setup", "Basic Profile", "ABHA Verification"];
 
 const ROLES = [
   { id: "patient", label: "Patient", color: "#16A34A" },
@@ -19,7 +19,7 @@ const ROLES = [
 
 export default function RegisterPage() {
   const navigate = useNavigate();
-  const { demoLogin } = useAuth();
+  const { register } = useAuth();
   const toast = useToast();
   const [step, setStep] = useState(0);
   const [role, setRole] = useState("patient");
@@ -27,21 +27,46 @@ export default function RegisterPage() {
   const [generatedOtp] = useState("847291");
   const [otpSent, setOtpSent] = useState(false);
   const [verified, setVerified] = useState(false);
+  const [loading, setLoading] = useState(false);
+  const [errorMessage, setErrorMessage] = useState("");
+  const [createdUser, setCreatedUser] = useState(null);
 
   const [form, setForm] = useState({
-    name: "", email: "", phone: "", password: "",
-    dob: "", gender: "", bloodGroup: "", height: "", weight: "",
-    address: "", emergencyContact: "",
-    medRegNo: "", specialization: "", experience: "", facility: "",
+    name: "",
+    email: "",
+    phone: "",
+    password: "",
+    dob: "",
+    gender: "Male",
+    bloodGroup: "O+",
+    height: "",
+    weight: "",
+    address: "",
+    emergencyContact: "",
+    emergencyPhone: "",
+    medRegNo: "",
+    specialization: "",
+    experience: "",
+    facility: "",
   });
 
-  const set = (k) => (e) =>
+  const set = (k) => (e) => {
+    setErrorMessage("");
     setForm((prev) => ({ ...prev, [k]: e.target.value }));
+  };
 
   const handleNext = () => {
-    if (step === 0 && (!form.name || !form.email || !form.password)) {
-      toast.error("Complete all required fields.");
-      return;
+    setErrorMessage("");
+    if (step === 0) {
+      if (!form.name.trim() || !form.email.trim() || !form.password) {
+        setErrorMessage("Please complete all required fields (Full Name, Email, Password).");
+        toast.error("Complete all required fields.");
+        return;
+      }
+      if (form.password.length < 6) {
+        setErrorMessage("Password must be at least 6 characters.");
+        return;
+      }
     }
     setStep((s) => s + 1);
   };
@@ -51,24 +76,61 @@ export default function RegisterPage() {
     toast.info(`OTP sent · Demo code: ${generatedOtp}`);
   };
 
-  const handleVerify = () => {
-    if (otp === generatedOtp) {
+  const handleVerify = async () => {
+    if (otp !== generatedOtp) {
+      toast.error("Incorrect OTP. Use the demo code shown: 847291");
+      return;
+    }
+
+    setLoading(true);
+    setErrorMessage("");
+
+    try {
+      // Register with the backend API
+      const payload = {
+        fullName: form.name.trim(),
+        email: form.email.trim().toLowerCase(),
+        password: form.password,
+        phoneNumber: form.phone ? form.phone.trim() : null,
+        role: role.toUpperCase(),
+        gender: form.gender ? form.gender.toUpperCase() : "MALE",
+        dateOfBirth: form.dob ? form.dob : null,
+        bloodGroup: form.bloodGroup || "O+",
+        height: form.height ? `${form.height} cm` : null,
+        weight: form.weight ? `${form.weight} kg` : null,
+        address: form.address || null,
+        emergencyContact: form.emergencyContact || null,
+        emergencyPhone: form.emergencyPhone || null,
+      };
+
+      const user = await register(payload);
+      setCreatedUser(user);
       setVerified(true);
-      toast.success("ABHA ID verified and assigned.");
-    } else {
-      toast.error("Incorrect OTP. Use the demo code shown.");
+      toast.success("Account created and ABHA ID assigned successfully!");
+    } catch (err) {
+      const msg = err.response?.data?.message || err.message || "Registration failed. Please try again.";
+      setErrorMessage(msg);
+      toast.error(msg);
+    } finally {
+      setLoading(false);
     }
   };
 
   const handleComplete = () => {
-    demoLogin(role);
-    toast.success("Registration complete. Redirecting...");
-    setTimeout(() => navigate(role === "patient" ? "/patient" : `/${role}`), 800);
+    toast.success("Welcome to UHIS! Opening your personal dashboard...");
+    setTimeout(() => {
+      if (role === "patient") {
+        navigate("/patient");
+      } else if (role === "doctor") {
+        navigate("/doctor");
+      } else if (role === "admin") {
+        navigate("/hospital");
+      } else {
+        navigate(`/${role}`);
+      }
+    }, 600);
   };
 
-  const [ABHA_GENERATED] = useState(
-    () => `91-${Math.floor(1000 + Math.random() * 9000)}-${Math.floor(1000 + Math.random() * 9000)}-${Math.floor(1000 + Math.random() * 9000)}`
-  );
   const selectedRole = ROLES.find((r) => r.id === role);
 
   return (
@@ -110,7 +172,7 @@ export default function RegisterPage() {
           >
             UHIS
           </span>
-          <span style={{ fontSize: "0.75rem", color: "var(--color-ink-muted)" }}>· Registration</span>
+          <span style={{ fontSize: "0.75rem", color: "var(--color-ink-muted)" }}>· Patient Registration</span>
         </div>
         <button
           onClick={() => navigate("/login")}
@@ -155,6 +217,26 @@ export default function RegisterPage() {
           ))}
         </div>
 
+        {errorMessage && (
+          <div
+            style={{
+              background: "var(--color-signal-critical-bg)",
+              border: "1px solid var(--color-signal-critical-border)",
+              borderRadius: "8px",
+              padding: "0.75rem 1rem",
+              marginBottom: "1.25rem",
+              color: "var(--color-signal-critical)",
+              fontSize: "0.85rem",
+              display: "flex",
+              alignItems: "center",
+              gap: "0.5rem",
+            }}
+          >
+            <AlertTriangle size={16} />
+            <span>{errorMessage}</span>
+          </div>
+        )}
+
         {/* Step 0 */}
         {step === 0 && (
           <div className="instrument-panel fade-in">
@@ -164,7 +246,7 @@ export default function RegisterPage() {
             </div>
             <div style={{ padding: "1.5rem", display: "flex", flexDirection: "column", gap: "1.25rem" }}>
               <div>
-                <div className="type-label" style={{ marginBottom: "0.625rem" }}>Select your role</div>
+                <div className="type-label" style={{ marginBottom: "0.625rem" }}>Registering as</div>
                 <div style={{ display: "flex", flexWrap: "wrap", gap: "0.5rem" }}>
                   {ROLES.map((r) => (
                     <button
@@ -190,16 +272,16 @@ export default function RegisterPage() {
                 </div>
                 {selectedRole && (
                   <div style={{ marginTop: "0.75rem", fontSize: "0.75rem", color: selectedRole.color, fontWeight: 500 }}>
-                    Registering as: {selectedRole.label}
+                    Selected: {selectedRole.label} Account
                   </div>
                 )}
               </div>
-              <PrecisionInput label="Full Name" value={form.name} onChange={set("name")} placeholder="As per Aadhaar" />
-              <PrecisionInput label="Email Address" type="email" value={form.email} onChange={set("email")} placeholder="you@example.com" />
-              <PrecisionInput label="Mobile Number" type="tel" value={form.phone} onChange={set("phone")} placeholder="+91 XXXXX XXXXX" />
-              <PrecisionInput label="Password" type="password" value={form.password} onChange={set("password")} placeholder="Min. 8 characters" />
+              <PrecisionInput label="Full Name *" value={form.name} onChange={set("name")} placeholder="e.g. Aboli Joshi" required />
+              <PrecisionInput label="Email Address *" type="email" value={form.email} onChange={set("email")} placeholder="aboli.joshi@example.com" required />
+              <PrecisionInput label="Mobile Number" type="tel" value={form.phone} onChange={set("phone")} placeholder="+91 98765 43210" />
+              <PrecisionInput label="Password *" type="password" value={form.password} onChange={set("password")} placeholder="Min. 6 characters" required />
               <Button onClick={handleNext} style={{ width: "100%", justifyContent: "center", marginTop: "0.25rem" }}>
-                Continue →
+                Continue to Profile Details →
               </Button>
             </div>
           </div>
@@ -211,10 +293,13 @@ export default function RegisterPage() {
             <div className="panel-header">
               <div className="type-label" style={{ marginBottom: "0.2rem" }}>Step 2 of 3</div>
               <div className="type-heading">
-                {role === "patient" ? "Patient Medical Profile" : "Professional Details"}
+                {role === "patient" ? "Basic Patient Information" : "Professional Details"}
               </div>
             </div>
             <div style={{ padding: "1.5rem", display: "flex", flexDirection: "column", gap: "1rem" }}>
+              <p className="type-body" style={{ fontSize: "0.825rem", color: "var(--color-ink-muted)", marginBottom: "0.25rem" }}>
+                Basic demographic profile. Detailed medical records, prescriptions, and diagnostics can be added anytime after login.
+              </p>
               {role === "patient" ? (
                 <>
                   <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: "1rem" }}>
@@ -222,34 +307,34 @@ export default function RegisterPage() {
                     <div>
                       <div className="type-label" style={{ marginBottom: "0.4rem" }}>Gender</div>
                       <select className="precision-input" value={form.gender} onChange={set("gender")}>
-                        <option value="">Select</option>
-                        <option>Male</option><option>Female</option><option>Other</option>
+                        <option value="Male">Male</option>
+                        <option value="Female">Female</option>
+                        <option value="Other">Other</option>
                       </select>
                     </div>
                     <div>
                       <div className="type-label" style={{ marginBottom: "0.4rem" }}>Blood Group</div>
                       <select className="precision-input" value={form.bloodGroup} onChange={set("bloodGroup")}>
-                        <option value="">Select</option>
-                        {["A+", "A−", "B+", "B−", "O+", "O−", "AB+", "AB−"].map((b) => <option key={b}>{b}</option>)}
+                        {["A+", "A−", "B+", "B−", "O+", "O−", "AB+", "AB−"].map((b) => <option key={b} value={b}>{b}</option>)}
                       </select>
                     </div>
-                    <PrecisionInput label="Height (cm)" type="number" value={form.height} onChange={set("height")} placeholder="170" />
-                    <PrecisionInput label="Weight (kg)" type="number" value={form.weight} onChange={set("weight")} placeholder="68" />
+                    <PrecisionInput label="Height (cm)" type="number" value={form.height} onChange={set("height")} placeholder="165" />
+                    <PrecisionInput label="Weight (kg)" type="number" value={form.weight} onChange={set("weight")} placeholder="60" />
                   </div>
-                  <PrecisionInput label="Emergency Contact" value={form.emergencyContact} onChange={set("emergencyContact")} placeholder="Name · +91 XXXXX XXXXX" />
-                  <PrecisionInput label="Full Address" value={form.address} onChange={set("address")} placeholder="House, Street, City, PIN" />
+                  <PrecisionInput label="Emergency Contact Name" value={form.emergencyContact} onChange={set("emergencyContact")} placeholder="e.g. Ramesh Joshi" />
+                  <PrecisionInput label="Full Address" value={form.address} onChange={set("address")} placeholder="e.g. Flat 302, Shivaji Nagar, Pune" />
                 </>
               ) : (
                 <>
                   <PrecisionInput label="Medical Registration No." value={form.medRegNo} onChange={set("medRegNo")} placeholder="MCI / NMC / Licence Number" />
                   <PrecisionInput label="Specialization / Department" value={form.specialization} onChange={set("specialization")} placeholder="Internal Medicine / Cardiology..." />
                   <PrecisionInput label="Years of Experience" type="number" value={form.experience} onChange={set("experience")} placeholder="8" />
-                  <PrecisionInput label="Primary Facility / Hospital" value={form.facility} onChange={set("facility")} placeholder="Apollo Hospitals, New Delhi" />
+                  <PrecisionInput label="Primary Facility / Hospital" value={form.facility} onChange={set("facility")} placeholder="AIIMS New Delhi" />
                 </>
               )}
               <div style={{ display: "flex", gap: "0.75rem", marginTop: "0.5rem" }}>
                 <Button variant="secondary" onClick={() => setStep(0)}>← Back</Button>
-                <Button onClick={handleNext} style={{ flex: 1, justifyContent: "center" }}>Continue →</Button>
+                <Button onClick={handleNext} style={{ flex: 1, justifyContent: "center" }}>Continue to Verification →</Button>
               </div>
             </div>
           </div>
@@ -260,17 +345,17 @@ export default function RegisterPage() {
           <div className="instrument-panel fade-in">
             <div className="panel-header">
               <div className="type-label" style={{ marginBottom: "0.2rem" }}>Step 3 of 3</div>
-              <div className="type-heading">ABHA Verification & ID Assignment</div>
+              <div className="type-heading">ABHA ID Verification & Creation</div>
             </div>
             <div style={{ padding: "1.5rem", display: "flex", flexDirection: "column", gap: "1.25rem" }}>
               {!verified ? (
                 <>
-                  <p className="type-body" style={{ lineHeight: 1.7 }}>
-                    An OTP will be sent to your registered mobile number to verify and generate your ABHA Health ID.
+                  <p className="type-body" style={{ lineHeight: 1.7, fontSize: "0.875rem" }}>
+                    An OTP will be verified to create your secure UHIS account and assign your unique Ayushman Bharat Digital Health ID (ABHA).
                   </p>
                   {!otpSent ? (
                     <Button onClick={handleSendOtp} style={{ width: "100%", justifyContent: "center" }}>
-                      Send OTP →
+                      Send Verification OTP →
                     </Button>
                   ) : (
                     <>
@@ -287,19 +372,21 @@ export default function RegisterPage() {
                       >
                         <span style={{ width: "6px", height: "6px", borderRadius: "99px", background: "var(--color-signal-info)", flexShrink: 0 }} />
                         <span style={{ fontFamily: "'Inter', sans-serif", fontSize: "0.8rem", fontWeight: 500, color: "var(--color-signal-info)" }}>
-                          OTP sent · Demo code: <strong>{generatedOtp}</strong>
+                          OTP sent · Verification code: <strong>{generatedOtp}</strong>
                         </span>
                       </div>
                       <PrecisionInput
-                        label="Enter OTP"
+                        label="Enter 6-Digit OTP"
                         value={otp}
                         onChange={(e) => setOtp(e.target.value)}
-                        placeholder="6-digit code"
+                        placeholder="847291"
                         maxLength={6}
                       />
                       <div style={{ display: "flex", gap: "0.75rem" }}>
-                        <Button variant="secondary" onClick={() => setStep(1)}>← Back</Button>
-                        <Button onClick={handleVerify} style={{ flex: 1, justifyContent: "center" }}>Verify OTP</Button>
+                        <Button variant="secondary" onClick={() => setStep(1)} disabled={loading}>← Back</Button>
+                        <Button onClick={handleVerify} disabled={loading} style={{ flex: 1, justifyContent: "center" }}>
+                          {loading ? "Creating Account..." : "Verify & Create Account"}
+                        </Button>
                       </div>
                     </>
                   )}
@@ -320,35 +407,37 @@ export default function RegisterPage() {
                     <CheckCircle size={18} style={{ color: "var(--color-signal-normal)", flexShrink: 0, marginTop: "1px" }} />
                     <div>
                       <div style={{ fontFamily: "'Inter', sans-serif", fontWeight: 600, fontSize: "0.9rem", color: "var(--color-signal-normal)", marginBottom: "0.2rem" }}>
-                        ABHA ID Verified
+                        Account Created Successfully
                       </div>
-                      <div className="type-micro">Your Ayushman Bharat Digital Health ID has been assigned.</div>
+                      <div className="type-micro">
+                        Welcome, {createdUser?.fullName || form.name}! Your unique ABHA Health record has been registered.
+                      </div>
                     </div>
                   </div>
                   <div className="instrument-panel">
                     <div className="panel-header">
-                      <div className="type-label">Your ABHA ID</div>
+                      <div className="type-label">Your Universal Health ID</div>
                     </div>
                     <div style={{ padding: "1.25rem" }}>
                       <div
                         style={{
                           fontFamily: "'JetBrains Mono', monospace",
                           fontWeight: 600,
-                          fontSize: "1.5rem",
+                          fontSize: "1.35rem",
                           color: "var(--color-ink)",
                           letterSpacing: "0.06em",
                           marginBottom: "0.4rem",
                         }}
                       >
-                        {ABHA_GENERATED}
+                        {createdUser?.abhaId || "91-XXXX-XXXX-XXXX"}
                       </div>
                       <div className="type-micro">
-                        ABHA Address: {form.name.toLowerCase().replace(/\s+/g, ".") || "your.name"}@abdm
+                        Linked Email: {form.email}
                       </div>
                     </div>
                   </div>
                   <Button onClick={handleComplete} style={{ width: "100%", justifyContent: "center" }}>
-                    Enter UHIS Portal →
+                    Open My Patient Dashboard →
                   </Button>
                 </div>
               )}

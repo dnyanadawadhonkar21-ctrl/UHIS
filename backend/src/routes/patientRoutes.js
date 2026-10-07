@@ -9,6 +9,7 @@ router.use(authMiddleware);
 
 router.get('/profile/:patientId?', patientController.getPatientProfile);
 router.get('/timeline/:patientId?', patientController.getUnifiedTimeline);
+router.get('/ai-overview/:patientId?', patientController.getPatientAiOverview);
 router.post('/appointments', rbacMiddleware('PATIENT', 'RECEPTIONIST'), patientController.bookAppointment);
 router.put('/appointments/:appointmentId/cancel', patientController.cancelAppointment);
 router.put('/profile', rbacMiddleware('PATIENT'), patientController.updatePatientProfile);

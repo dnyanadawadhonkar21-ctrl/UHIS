@@ -1,52 +1,54 @@
 import React from "react";
 import { useNavigate } from "react-router-dom";
-import { HeartPulse, Shield, Brain, Link2, ArrowRight, CheckCircle } from "lucide-react";
+import {
+  HeartPulse,
+  Shield,
+  ShieldCheck,
+  ArrowRight,
+  CheckCircle,
+  UserCheck,
+  FileText,
+  Stethoscope,
+  Lock,
+  Database,
+  ArrowDown,
+  Pill,
+  ClipboardList
+} from "lucide-react";
 import Button from "../components/ui/Button";
 
-const METRICS = [
-  { label: "Patient Records", value: "10.2M+", sub: "Unified across facilities" },
-  { label: "Connected Hospitals", value: "847", sub: "Onboarded to national grid" },
-  { label: "System Uptime", value: "99.97%", sub: "Last 90 days" },
-  { label: "Daily Transactions", value: "3.1M", sub: "API calls processed" },
-];
-
-const FEATURES = [
+const CORE_FEATURES = [
   {
-    icon: Link2,
-    title: "Longitudinal Health Record",
-    desc: "One unified record spanning all facilities — visits, labs, prescriptions, and immunisations — accessible anywhere on the national health grid.",
+    icon: Database,
+    title: "Unified Health Records",
+    desc: "Keep important medical information organized in one secure digital health record.",
+    badge: "Consolidated Data",
   },
   {
-    icon: Shield,
-    title: "ABHA Universal Identity",
-    desc: "Ayushman Bharat Digital Mission compliant. A single 14-digit health ID links every interaction across public and private providers.",
+    icon: Stethoscope,
+    title: "Secure Doctor Access",
+    desc: "Allow authorized healthcare professionals to access relevant records when needed.",
+    badge: "Clinical Portals",
   },
   {
-    icon: Brain,
-    title: "Clinical AI Intelligence",
-    desc: "Symptom triage, drug interaction checking, lab result explainer, and OCR-based digitisation of physical medical records.",
+    icon: Lock,
+    title: "Patient-Controlled Sharing",
+    desc: "Patients control when and how their medical information is shared.",
+    badge: "Consent Framework",
   },
   {
-    icon: HeartPulse,
-    title: "End-to-End Encrypted",
-    desc: "AES-256 at rest, TLS 1.3 in transit. Role-based access control enforced at every API boundary with full audit logs.",
+    icon: ClipboardList,
+    title: "Digital Medical Records",
+    desc: "Store prescriptions, reports, diagnoses, and other important medical information digitally.",
+    badge: "Longitudinal EHR",
   },
 ];
 
-const PORTALS = [
-  { code: "PT", role: "Patient", path: "/login", desc: "View records, book appointments, track medications.", color: "#16A34A" },
-  { code: "DR", role: "Clinician", path: "/login", desc: "OPD queue management, EHR access, prescription builder.", color: "#2563EB" },
-  { code: "HA", role: "Hospital Admin", path: "/login", desc: "Bed management, staff rostering, occupancy metrics.", color: "#D97706" },
-  { code: "DL", role: "Diagnostic Lab", path: "/login", desc: "Order management, result upload, report dispatch.", color: "#0EA5E9" },
-  { code: "PH", role: "Pharmacy", path: "/login", desc: "Prescription verification, dispensation, stock control.", color: "#DC2626" },
-  { code: "RC", role: "Reception", path: "/login", desc: "Walk-in registration, token generation, slot assignment.", color: "#7C3AED" },
-];
-
-const TRUST = [
-  "ABDM Certified · v2.1",
-  "IT Act 2000 Compliant",
-  "AES-256 Encryption",
-  "99.97% Uptime SLA",
+const TRUST_PILLARS = [
+  "ABHA Universal Identity",
+  "Role-Based Access Control",
+  "AES-256 Data Encryption",
+  "Patient Consent Manager",
 ];
 
 export default function LandingPage() {
@@ -105,7 +107,7 @@ export default function LandingPage() {
             National Health Interface
           </span>
         </div>
-        <div style={{ display: "flex", alignItems: "center", gap: "1.5rem" }}>
+        <div style={{ display: "flex", alignItems: "center", gap: "1rem" }}>
           <Button variant="secondary" size="sm" onClick={() => navigate("/login")}>
             Sign In
           </Button>
@@ -119,7 +121,7 @@ export default function LandingPage() {
       <section
         style={{
           background: "linear-gradient(135deg, #1E293B 0%, #1E3A5F 50%, #1E293B 100%)",
-          padding: "5rem 2rem 4rem",
+          padding: "4.5rem 2rem 4rem",
           position: "relative",
           overflow: "hidden",
         }}
@@ -128,42 +130,42 @@ export default function LandingPage() {
           style={{
             position: "absolute",
             inset: 0,
-            backgroundImage: "radial-gradient(circle at 70% 40%, rgba(37,99,235,0.15) 0%, transparent 60%)",
+            backgroundImage: "radial-gradient(circle at 70% 40%, rgba(37,99,235,0.18) 0%, transparent 60%)",
             pointerEvents: "none",
           }}
         />
-        <div style={{ maxWidth: "1100px", margin: "0 auto", position: "relative" }}>
+        <div style={{ maxWidth: "1120px", margin: "0 auto", position: "relative" }}>
           <div
             style={{
               display: "inline-flex",
               alignItems: "center",
               gap: "0.5rem",
-              background: "rgba(22, 163, 74, 0.15)",
-              border: "1px solid rgba(22,163,74,0.3)",
+              background: "rgba(37, 99, 235, 0.2)",
+              border: "1px solid rgba(96, 165, 250, 0.3)",
               borderRadius: "99px",
               padding: "0.35rem 0.875rem",
               marginBottom: "1.75rem",
             }}
           >
-            <span style={{ width: "6px", height: "6px", borderRadius: "99px", background: "#16A34A", flexShrink: 0 }} />
+            <span style={{ width: "6px", height: "6px", borderRadius: "99px", background: "#60A5FA", flexShrink: 0 }} />
             <span
               style={{
                 fontFamily: "'Inter', sans-serif",
                 fontSize: "0.75rem",
                 fontWeight: 600,
-                color: "#4ADE80",
+                color: "#93C5FD",
                 letterSpacing: "0.04em",
               }}
             >
-              SYSTEM OPERATIONAL · ABDM Compliant
+              SECURE HEALTHCARE INFRASTRUCTURE
             </span>
           </div>
 
           <div
             style={{
               display: "grid",
-              gridTemplateColumns: "1fr 1fr",
-              gap: "4rem",
+              gridTemplateColumns: "1.1fr 0.9fr",
+              gap: "3.5rem",
               alignItems: "center",
             }}
             className="hero-grid"
@@ -173,7 +175,7 @@ export default function LandingPage() {
                 style={{
                   fontFamily: "'Plus Jakarta Sans', sans-serif",
                   fontWeight: 700,
-                  fontSize: "clamp(2rem, 4vw, 3.25rem)",
+                  fontSize: "clamp(2rem, 3.8vw, 3.25rem)",
                   color: "white",
                   letterSpacing: "-0.03em",
                   lineHeight: 1.15,
@@ -189,38 +191,38 @@ export default function LandingPage() {
               <p
                 style={{
                   fontFamily: "'Inter', sans-serif",
-                  fontSize: "1.05rem",
-                  color: "rgba(255,255,255,0.65)",
+                  fontSize: "1.025rem",
+                  color: "rgba(255,255,255,0.7)",
                   lineHeight: 1.7,
-                  maxWidth: "440px",
-                  marginBottom: "2.5rem",
+                  maxWidth: "460px",
+                  marginBottom: "2.25rem",
                 }}
               >
                 A mission-critical, multi-role EMR connecting patients, clinicians,
                 labs, pharmacies, and hospital administrators on a single verified national health grid.
               </p>
-              <div style={{ display: "flex", gap: "0.75rem", flexWrap: "wrap", marginBottom: "2.5rem" }}>
+              <div style={{ display: "flex", gap: "0.75rem", flexWrap: "wrap", marginBottom: "2.25rem" }}>
                 <Button size="lg" onClick={() => navigate("/login")}>
                   Access Portal <ArrowRight size={16} />
                 </Button>
                 <Button
                   variant="secondary"
                   size="lg"
-                  style={{ background: "transparent", borderColor: "rgba(255,255,255,0.2)", color: "rgba(255,255,255,0.8)" }}
+                  style={{ background: "transparent", borderColor: "rgba(255,255,255,0.25)", color: "rgba(255,255,255,0.9)" }}
                   onClick={() => navigate("/register")}
                 >
                   Register with ABHA
                 </Button>
               </div>
               <div style={{ display: "flex", gap: "1.25rem", flexWrap: "wrap" }}>
-                {TRUST.map((t) => (
+                {TRUST_PILLARS.map((t) => (
                   <div key={t} style={{ display: "flex", alignItems: "center", gap: "0.4rem" }}>
-                    <CheckCircle size={12} style={{ color: "#4ADE80", flexShrink: 0 }} />
+                    <CheckCircle size={13} style={{ color: "#4ADE80", flexShrink: 0 }} />
                     <span
                       style={{
                         fontFamily: "'Inter', sans-serif",
                         fontSize: "0.75rem",
-                        color: "rgba(255,255,255,0.5)",
+                        color: "rgba(255,255,255,0.65)",
                         fontWeight: 500,
                       }}
                     >
@@ -231,65 +233,214 @@ export default function LandingPage() {
               </div>
             </div>
 
-            {/* Metrics card */}
+            {/* UHIS IN ACTION / Unified Health Record Card */}
             <div
               style={{
-                background: "rgba(255,255,255,0.05)",
-                border: "1px solid rgba(255,255,255,0.1)",
+                background: "rgba(15, 23, 42, 0.65)",
+                border: "1px solid rgba(255, 255, 255, 0.12)",
                 borderRadius: "16px",
-                padding: "2rem",
-                backdropFilter: "blur(10px)",
+                padding: "1.75rem",
+                backdropFilter: "blur(12px)",
+                boxShadow: "0 20px 40px rgba(0, 0, 0, 0.25)",
               }}
             >
+              <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", marginBottom: "1.25rem" }}>
+                <div>
+                  <div
+                    style={{
+                      fontFamily: "'Inter', sans-serif",
+                      fontSize: "0.68rem",
+                      fontWeight: 700,
+                      letterSpacing: "0.08em",
+                      color: "#60A5FA",
+                      textTransform: "uppercase",
+                      marginBottom: "0.15rem",
+                    }}
+                  >
+                    UHIS IN ACTION
+                  </div>
+                  <div
+                    style={{
+                      fontFamily: "'Plus Jakarta Sans', sans-serif",
+                      fontWeight: 600,
+                      fontSize: "0.95rem",
+                      color: "white",
+                    }}
+                  >
+                    Unified Health Flow
+                  </div>
+                </div>
+                <span
+                  style={{
+                    fontSize: "0.68rem",
+                    fontWeight: 600,
+                    padding: "0.2rem 0.55rem",
+                    borderRadius: "99px",
+                    background: "rgba(34, 197, 94, 0.15)",
+                    border: "1px solid rgba(34, 197, 94, 0.3)",
+                    color: "#4ADE80",
+                    display: "inline-flex",
+                    alignItems: "center",
+                    gap: "0.3rem",
+                  }}
+                >
+                  <ShieldCheck size={11} /> End-to-End
+                </span>
+              </div>
+
+              {/* Visual Flow Nodes */}
+              <div style={{ display: "flex", flexDirection: "column", gap: "0.5rem" }}>
+                {/* Step 1: Patient Health ID */}
+                <div
+                  style={{
+                    background: "rgba(255, 255, 255, 0.05)",
+                    border: "1px solid rgba(255, 255, 255, 0.08)",
+                    borderRadius: "10px",
+                    padding: "0.75rem 0.9rem",
+                    display: "flex",
+                    alignItems: "center",
+                    gap: "0.75rem",
+                  }}
+                >
+                  <div
+                    style={{
+                      width: "32px",
+                      height: "32px",
+                      borderRadius: "8px",
+                      background: "rgba(37, 99, 235, 0.25)",
+                      border: "1px solid rgba(96, 165, 250, 0.4)",
+                      display: "flex",
+                      alignItems: "center",
+                      justifyContent: "center",
+                      flexShrink: 0,
+                    }}
+                  >
+                    <UserCheck size={16} color="#93C5FD" />
+                  </div>
+                  <div style={{ flex: 1, minWidth: 0 }}>
+                    <div style={{ fontFamily: "'Plus Jakarta Sans', sans-serif", fontSize: "0.82rem", fontWeight: 600, color: "white" }}>
+                      Patient Health ID (ABHA)
+                    </div>
+                    <div style={{ fontFamily: "'Inter', sans-serif", fontSize: "0.7rem", color: "rgba(255, 255, 255, 0.55)" }}>
+                      Unique digital health identity for cross-provider care
+                    </div>
+                  </div>
+                </div>
+
+                {/* Connector Arrow 1 */}
+                <div style={{ display: "flex", justifyContent: "center", margin: "-0.2rem 0" }}>
+                  <ArrowDown size={14} style={{ color: "rgba(147, 197, 253, 0.6)" }} />
+                </div>
+
+                {/* Step 2: Unified Medical Records */}
+                <div
+                  style={{
+                    background: "rgba(37, 99, 235, 0.12)",
+                    border: "1px solid rgba(96, 165, 250, 0.25)",
+                    borderRadius: "10px",
+                    padding: "0.75rem 0.9rem",
+                    display: "flex",
+                    alignItems: "center",
+                    gap: "0.75rem",
+                  }}
+                >
+                  <div
+                    style={{
+                      width: "32px",
+                      height: "32px",
+                      borderRadius: "8px",
+                      background: "rgba(37, 99, 235, 0.35)",
+                      border: "1px solid rgba(96, 165, 250, 0.5)",
+                      display: "flex",
+                      alignItems: "center",
+                      justifyContent: "center",
+                      flexShrink: 0,
+                    }}
+                  >
+                    <FileText size={16} color="#60A5FA" />
+                  </div>
+                  <div style={{ flex: 1, minWidth: 0 }}>
+                    <div style={{ fontFamily: "'Plus Jakarta Sans', sans-serif", fontSize: "0.82rem", fontWeight: 600, color: "white" }}>
+                      Unified Medical Records
+                    </div>
+                    <div style={{ fontFamily: "'Inter', sans-serif", fontSize: "0.7rem", color: "rgba(255, 255, 255, 0.6)" }}>
+                      Centralized timeline of visits, labs, medications & alerts
+                    </div>
+                  </div>
+                </div>
+
+                {/* Connector Arrow 2 */}
+                <div style={{ display: "flex", justifyContent: "center", margin: "-0.2rem 0" }}>
+                  <ArrowDown size={14} style={{ color: "rgba(147, 197, 253, 0.6)" }} />
+                </div>
+
+                {/* Step 3: Secure Doctor Access */}
+                <div
+                  style={{
+                    background: "rgba(255, 255, 255, 0.05)",
+                    border: "1px solid rgba(255, 255, 255, 0.08)",
+                    borderRadius: "10px",
+                    padding: "0.75rem 0.9rem",
+                    display: "flex",
+                    alignItems: "center",
+                    gap: "0.75rem",
+                  }}
+                >
+                  <div
+                    style={{
+                      width: "32px",
+                      height: "32px",
+                      borderRadius: "8px",
+                      background: "rgba(22, 163, 74, 0.25)",
+                      border: "1px solid rgba(74, 222, 128, 0.4)",
+                      display: "flex",
+                      alignItems: "center",
+                      justifyContent: "center",
+                      flexShrink: 0,
+                    }}
+                  >
+                    <Stethoscope size={16} color="#86EFAC" />
+                  </div>
+                  <div style={{ flex: 1, minWidth: 0 }}>
+                    <div style={{ fontFamily: "'Plus Jakarta Sans', sans-serif", fontSize: "0.82rem", fontWeight: 600, color: "white" }}>
+                      Secure Doctor Access
+                    </div>
+                    <div style={{ fontFamily: "'Inter', sans-serif", fontSize: "0.7rem", color: "rgba(255, 255, 255, 0.55)" }}>
+                      Role-authorized clinician access with patient-controlled consent
+                    </div>
+                  </div>
+                </div>
+              </div>
+
+              {/* Supporting Items Grid */}
               <div
                 style={{
-                  fontFamily: "'Inter', sans-serif",
-                  fontSize: "0.7rem",
-                  fontWeight: 600,
-                  letterSpacing: "0.08em",
-                  color: "rgba(255,255,255,0.4)",
-                  textTransform: "uppercase",
-                  marginBottom: "1.5rem",
+                  marginTop: "1.25rem",
+                  paddingTop: "1.1rem",
+                  borderTop: "1px solid rgba(255, 255, 255, 0.1)",
+                  display: "grid",
+                  gridTemplateColumns: "1fr 1fr",
+                  gap: "0.6rem 0.75rem",
                 }}
               >
-                Live System Overview
-              </div>
-              <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: "1.5rem" }}>
-                {METRICS.map((m) => (
-                  <div key={m.label}>
-                    <div
-                      style={{
-                        fontFamily: "'Plus Jakarta Sans', sans-serif",
-                        fontWeight: 700,
-                        fontSize: "2rem",
-                        color: "white",
-                        letterSpacing: "-0.03em",
-                        lineHeight: 1,
-                        marginBottom: "0.25rem",
-                      }}
-                    >
-                      {m.value}
-                    </div>
-                    <div
+                {[
+                  "Medical History",
+                  "Prescriptions",
+                  "Lab & Diagnostic Reports",
+                  "Patient-controlled access",
+                ].map((item) => (
+                  <div key={item} style={{ display: "flex", alignItems: "center", gap: "0.4rem" }}>
+                    <CheckCircle size={12} style={{ color: "#60A5FA", flexShrink: 0 }} />
+                    <span
                       style={{
                         fontFamily: "'Inter', sans-serif",
-                        fontSize: "0.8rem",
-                        fontWeight: 600,
-                        color: "rgba(255,255,255,0.7)",
-                        marginBottom: "0.1rem",
+                        fontSize: "0.72rem",
+                        color: "rgba(255, 255, 255, 0.75)",
+                        fontWeight: 500,
                       }}
                     >
-                      {m.label}
-                    </div>
-                    <div
-                      style={{
-                        fontFamily: "'Inter', sans-serif",
-                        fontSize: "0.7rem",
-                        color: "rgba(255,255,255,0.35)",
-                      }}
-                    >
-                      {m.sub}
-                    </div>
+                      {item}
+                    </span>
                   </div>
                 ))}
               </div>
@@ -298,54 +449,81 @@ export default function LandingPage() {
         </div>
       </section>
 
-      {/* Features */}
-      <section style={{ padding: "4rem 2rem", background: "var(--color-panel)" }}>
-        <div style={{ maxWidth: "1100px", margin: "0 auto" }}>
-          <div style={{ textAlign: "center", marginBottom: "3rem" }}>
-            <div className="type-label" style={{ color: "var(--color-accent-primary)", marginBottom: "0.75rem" }}>
-              PLATFORM CAPABILITIES
+      {/* Feature Section: One Health Record. Wherever You Need It. */}
+      <section style={{ padding: "5rem 2rem", background: "var(--color-surface)" }}>
+        <div style={{ maxWidth: "1120px", margin: "0 auto" }}>
+          <div style={{ textAlign: "center", marginBottom: "3.5rem" }}>
+            <div
+              className="type-label"
+              style={{
+                color: "var(--color-accent-primary)",
+                marginBottom: "0.65rem",
+                fontWeight: 600,
+                letterSpacing: "0.08em",
+              }}
+            >
+              UNIFIED HEALTH ARCHITECTURE
             </div>
             <h2
               style={{
                 fontFamily: "'Plus Jakarta Sans', sans-serif",
                 fontWeight: 700,
-                fontSize: "2rem",
+                fontSize: "clamp(1.75rem, 2.5vw, 2.25rem)",
                 letterSpacing: "-0.03em",
                 color: "var(--color-ink)",
+                marginBottom: "0.75rem",
               }}
             >
-              Built for India's Healthcare
+              One Health Record. Wherever You Need It.
             </h2>
+            <p
+              style={{
+                fontFamily: "'Inter', sans-serif",
+                fontSize: "0.95rem",
+                color: "var(--color-ink-secondary)",
+                maxWidth: "600px",
+                margin: "0 auto",
+                lineHeight: 1.6,
+              }}
+            >
+              A seamless, secure digital ecosystem connecting care providers while keeping patients in complete control of their data.
+            </p>
           </div>
+
           <div
             style={{
               display: "grid",
-              gridTemplateColumns: "repeat(auto-fit, minmax(240px, 1fr))",
+              gridTemplateColumns: "repeat(auto-fit, minmax(250px, 1fr))",
               gap: "1.5rem",
             }}
           >
-            {FEATURES.map((f) => {
+            {CORE_FEATURES.map((f) => {
               const Icon = f.icon;
               return (
                 <div
                   key={f.title}
                   style={{
-                    background: "var(--color-surface)",
+                    background: "var(--color-panel)",
                     border: "1px solid var(--color-border)",
-                    borderRadius: "12px",
-                    padding: "1.5rem",
+                    borderRadius: "14px",
+                    padding: "1.75rem 1.5rem",
+                    display: "flex",
+                    flexDirection: "column",
+                    boxShadow: "0 1px 3px rgba(0,0,0,0.04)",
+                    transition: "border-color 150ms ease, box-shadow 150ms ease",
                   }}
                 >
                   <div
                     style={{
-                      width: "40px",
-                      height: "40px",
+                      width: "44px",
+                      height: "44px",
                       borderRadius: "10px",
                       background: "var(--color-signal-info-bg)",
+                      border: "1px solid var(--color-signal-info-border)",
                       display: "flex",
                       alignItems: "center",
                       justifyContent: "center",
-                      marginBottom: "1rem",
+                      marginBottom: "1.25rem",
                     }}
                   >
                     <Icon size={20} style={{ color: "var(--color-accent-primary)" }} />
@@ -354,14 +532,22 @@ export default function LandingPage() {
                     style={{
                       fontFamily: "'Plus Jakarta Sans', sans-serif",
                       fontWeight: 600,
-                      fontSize: "0.95rem",
+                      fontSize: "1.05rem",
                       color: "var(--color-ink)",
-                      marginBottom: "0.5rem",
+                      marginBottom: "0.6rem",
                     }}
                   >
                     {f.title}
                   </h3>
-                  <p className="type-body" style={{ lineHeight: 1.65, fontSize: "0.85rem" }}>
+                  <p
+                    className="type-body"
+                    style={{
+                      lineHeight: 1.65,
+                      fontSize: "0.875rem",
+                      color: "var(--color-ink-secondary)",
+                      flex: 1,
+                    }}
+                  >
                     {f.desc}
                   </p>
                 </div>
@@ -371,99 +557,59 @@ export default function LandingPage() {
         </div>
       </section>
 
-      {/* Portals */}
-      <section style={{ padding: "4rem 2rem", background: "var(--color-surface)" }}>
-        <div style={{ maxWidth: "1100px", margin: "0 auto" }}>
-          <div style={{ textAlign: "center", marginBottom: "3rem" }}>
-            <div className="type-label" style={{ color: "var(--color-accent-primary)", marginBottom: "0.75rem" }}>
-              ACCESS PORTALS
-            </div>
-            <h2
+      {/* CTA Section */}
+      <section style={{ padding: "0 2rem 5rem", background: "var(--color-surface)" }}>
+        <div
+          style={{
+            maxWidth: "1120px",
+            margin: "0 auto",
+            background: "var(--color-chassis)",
+            borderRadius: "16px",
+            padding: "3rem 2.5rem",
+            border: "1px solid var(--color-border-chassis)",
+            display: "flex",
+            alignItems: "center",
+            justifyContent: "space-between",
+            gap: "2rem",
+            flexWrap: "wrap",
+          }}
+        >
+          <div style={{ maxWidth: "560px" }}>
+            <h3
               style={{
                 fontFamily: "'Plus Jakarta Sans', sans-serif",
                 fontWeight: 700,
-                fontSize: "2rem",
-                letterSpacing: "-0.03em",
-                color: "var(--color-ink)",
+                fontSize: "1.5rem",
+                color: "white",
+                letterSpacing: "-0.02em",
+                marginBottom: "0.5rem",
               }}
             >
-              Select Your Role
-            </h2>
+              Experience Unified Digital Healthcare
+            </h3>
+            <p
+              style={{
+                fontFamily: "'Inter', sans-serif",
+                fontSize: "0.9rem",
+                color: "rgba(255,255,255,0.65)",
+                lineHeight: 1.6,
+              }}
+            >
+              Sign in to access clinical workflows and patient timelines, or register with your ABHA ID to create your unified health profile.
+            </p>
           </div>
-          <div
-            style={{
-              display: "grid",
-              gridTemplateColumns: "repeat(auto-fill, minmax(240px, 1fr))",
-              gap: "1rem",
-            }}
-          >
-            {PORTALS.map((p) => (
-              <div
-                key={p.code}
-                onClick={() => navigate(p.path)}
-                style={{
-                  background: "var(--color-panel)",
-                  border: "1.5px solid var(--color-border)",
-                  borderRadius: "12px",
-                  padding: "1.5rem",
-                  cursor: "pointer",
-                  transition: "box-shadow 150ms ease, border-color 150ms ease, transform 150ms ease",
-                }}
-                onMouseEnter={(e) => {
-                  e.currentTarget.style.boxShadow = "0 8px 24px rgba(0,0,0,0.08)";
-                  e.currentTarget.style.borderColor = p.color;
-                  e.currentTarget.style.transform = "translateY(-2px)";
-                }}
-                onMouseLeave={(e) => {
-                  e.currentTarget.style.boxShadow = "none";
-                  e.currentTarget.style.borderColor = "var(--color-border)";
-                  e.currentTarget.style.transform = "translateY(0)";
-                }}
-              >
-                <div
-                  style={{
-                    width: "42px",
-                    height: "42px",
-                    borderRadius: "10px",
-                    background: p.color + "15",
-                    display: "flex",
-                    alignItems: "center",
-                    justifyContent: "center",
-                    marginBottom: "1rem",
-                  }}
-                >
-                  <span
-                    style={{
-                      fontFamily: "'Plus Jakarta Sans', sans-serif",
-                      fontWeight: 800,
-                      fontSize: "0.85rem",
-                      color: p.color,
-                      letterSpacing: "0.02em",
-                    }}
-                  >
-                    {p.code}
-                  </span>
-                </div>
-                <h3
-                  style={{
-                    fontFamily: "'Plus Jakarta Sans', sans-serif",
-                    fontWeight: 600,
-                    fontSize: "0.95rem",
-                    color: "var(--color-ink)",
-                    marginBottom: "0.4rem",
-                  }}
-                >
-                  {p.role}
-                </h3>
-                <p className="type-body" style={{ fontSize: "0.8rem", lineHeight: 1.6, marginBottom: "1rem" }}>
-                  {p.desc}
-                </p>
-                <div style={{ display: "flex", alignItems: "center", gap: "0.3rem" }}>
-                  <span style={{ fontSize: "0.78rem", fontWeight: 600, color: p.color }}>Access Portal</span>
-                  <ArrowRight size={12} style={{ color: p.color }} />
-                </div>
-              </div>
-            ))}
+          <div style={{ display: "flex", gap: "0.75rem", flexWrap: "wrap" }}>
+            <Button size="md" onClick={() => navigate("/login")}>
+              Access Portal <ArrowRight size={15} />
+            </Button>
+            <Button
+              variant="secondary"
+              size="md"
+              style={{ background: "transparent", borderColor: "rgba(255,255,255,0.25)", color: "white" }}
+              onClick={() => navigate("/register")}
+            >
+              Register with ABHA
+            </Button>
           </div>
         </div>
       </section>
@@ -471,13 +617,14 @@ export default function LandingPage() {
       {/* Footer */}
       <footer
         style={{
-          background: "var(--color-chassis)",
+          background: "var(--color-chassis-mid)",
           padding: "1.75rem 2rem",
           display: "flex",
           alignItems: "center",
           justifyContent: "space-between",
           flexWrap: "wrap",
           gap: "1rem",
+          borderTop: "1px solid rgba(255,255,255,0.08)",
         }}
       >
         <div style={{ display: "flex", alignItems: "center", gap: "0.625rem" }}>
@@ -524,8 +671,8 @@ export default function LandingPage() {
       </footer>
 
       <style>{`
-        @media (max-width: 768px) {
-          .hero-grid { grid-template-columns: 1fr !important; gap: 2rem !important; }
+        @media (max-width: 868px) {
+          .hero-grid { grid-template-columns: 1fr !important; gap: 2.5rem !important; }
         }
       `}</style>
     </div>
