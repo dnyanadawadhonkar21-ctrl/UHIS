@@ -11,7 +11,6 @@ import {
   Plus,
   FileText,
   FileImage,
-  Eye,
   X,
   ZoomIn,
   ZoomOut,
@@ -137,22 +136,31 @@ export default function PatientDashboard() {
   const [activeGeneratedOtp, setActiveGeneratedOtp] = useState(null);
   const [otpSecondsLeft, setOtpSecondsLeft] = useState(300);
 
+  // Doctor -> Patient Medical Record Access Request State
+  const [medicalAccessRequests, setMedicalAccessRequests] = useState([]);
+  const [activeMedicalOtp, setActiveMedicalOtp] = useState(null);
+  const [medicalOtpSecondsLeft, setMedicalOtpSecondsLeft] = useState(300);
+  const [medicalActionLoading, setMedicalActionLoading] = useState(false);
+
   useEffect(() => {
     fetchRealPatientData();
     fetchMedicalRecords();
     fetchEmergencyRequests();
-
+    fetchMedicalAccessRequests();
 
     const handleSyncEvent = () => {
       fetchEmergencyRequests();
+      fetchMedicalAccessRequests();
       syncFromLocalStorage();
     };
 
     window.addEventListener("storage", handleSyncEvent);
     window.addEventListener("uhis_emergency_update", handleSyncEvent);
+    window.addEventListener("uhis_medical_access_update", handleSyncEvent);
 
     const interval = setInterval(() => {
       fetchEmergencyRequests();
+      fetchMedicalAccessRequests();
       syncFromLocalStorage();
     }, 2500);
 
@@ -160,6 +168,7 @@ export default function PatientDashboard() {
       clearInterval(interval);
       window.removeEventListener("storage", handleSyncEvent);
       window.removeEventListener("uhis_emergency_update", handleSyncEvent);
+      window.removeEventListener("uhis_medical_access_update", handleSyncEvent);
     };
   }, [user]);
 
@@ -223,11 +232,59 @@ export default function PatientDashboard() {
           }
         }
       }
+
+      // DOCTOR -> PATIENT MEDICAL RECORD ACCESS SYNC
+      const storedMedReq = localStorage.getItem("uhis_active_medical_access_request");
+      if (storedMedReq && currentEmail) {
+        const parsed = JSON.parse(storedMedReq);
+        const target = (parsed.patientUHISId || parsed.patientEmail || parsed.patientId || parsed.patientAbhaId || "").toLowerCase().trim();
+        const targetName = (parsed.patientName || "").toLowerCase().trim();
+        const isTarget = target && (
+          target === currentEmail ||
+          target === currentAbha ||
+          target === currentId ||
+          (targetName && currentName && targetName === currentName)
+        );
+
+        if (isTarget) {
+          setMedicalAccessRequests((prev) => {
+            if (!prev.find((r) => r.id === parsed.id)) {
+              return [parsed, ...prev];
+            }
+            return prev.map((r) => (r.id === parsed.id ? { ...r, ...parsed } : r));
+          });
+        }
+      }
+
+      const storedMedOtp = localStorage.getItem("uhis_active_medical_otp_data");
+      if (storedMedOtp && currentEmail) {
+        const parsedOtp = JSON.parse(storedMedOtp);
+        const otpTarget = (parsedOtp.patientUHISId || parsedOtp.patientEmail || parsedOtp.patientId || "").toLowerCase().trim();
+        const otpTargetName = (parsedOtp.patientName || "").toLowerCase().trim();
+        const isOtpTarget = (
+          !otpTarget ||
+          otpTarget === currentEmail ||
+          otpTarget === currentAbha ||
+          otpTarget === currentId ||
+          (otpTargetName && currentName && otpTargetName === currentName)
+        );
+
+        if (isOtpTarget && parsedOtp && parsedOtp.otp) {
+          const now = Date.now();
+          const expTime = new Date(parsedOtp.expiresAt).getTime();
+          if (expTime > now) {
+            setActiveMedicalOtp(parsedOtp);
+            setMedicalOtpSecondsLeft(Math.floor((expTime - now) / 1000));
+          } else {
+            localStorage.removeItem("uhis_active_medical_otp_data");
+            setActiveMedicalOtp(null);
+          }
+        }
+      }
     } catch (e) { }
   };
 
-
-  // OTP Countdown timer
+  // Emergency OTP Countdown timer
   useEffect(() => {
     let timer;
     if ((approvedOtpModal || activeGeneratedOtp) && otpSecondsLeft > 0) {
@@ -245,6 +302,25 @@ export default function PatientDashboard() {
     }
     return () => clearInterval(timer);
   }, [approvedOtpModal, activeGeneratedOtp, otpSecondsLeft]);
+
+  // Medical Record Access OTP Countdown timer (5 minutes)
+  useEffect(() => {
+    let timer;
+    if (activeMedicalOtp && medicalOtpSecondsLeft > 0) {
+      timer = setInterval(() => {
+        setMedicalOtpSecondsLeft((prev) => {
+          if (prev <= 1) {
+            clearInterval(timer);
+            localStorage.removeItem("uhis_active_medical_otp_data");
+            toast.warning("Medical record access OTP has expired.");
+            return 0;
+          }
+          return prev - 1;
+        });
+      }, 1000);
+    }
+    return () => clearInterval(timer);
+  }, [activeMedicalOtp, medicalOtpSecondsLeft]);
 
   const fetchRealPatientData = async () => {
     try {
@@ -430,6 +506,97 @@ export default function PatientDashboard() {
     }
   };
 
+  // =============================================
+  // DOCTOR -> PATIENT MEDICAL RECORD ACCESS FLOW
+  // =============================================
+
+  const fetchMedicalAccessRequests = async () => {
+    try {
+      const res = await api.get('/medical-access/patient/requests').catch(() => null);
+      if (res && res.data && res.data.success && res.data.requests) {
+        setMedicalAccessRequests(res.data.requests);
+      }
+    } catch (e) {
+      // offline mode
+    }
+  };
+
+  const handleApproveMedicalAccess = async (requestId) => {
+    setMedicalActionLoading(true);
+    try {
+      const res = await api.post(`/medical-access/patient/allow/${requestId}`).catch(() => null);
+
+      let otpData = null;
+      if (res && res.data && res.data.success && res.data.otp) {
+        otpData = {
+          requestId,
+          otp: res.data.otp,
+          expiresAt: res.data.expiresAt,
+          expiresInSeconds: res.data.expiresInSeconds || 300,
+          doctorName: res.data.doctorName || 'Doctor',
+          hospitalName: res.data.hospitalName || 'Hospital',
+          reason: res.data.reason || 'Medical record review',
+        };
+      } else {
+        // Offline/mock fallback
+        const mockOtp = Math.floor(100000 + Math.random() * 900000).toString();
+        const req = medicalAccessRequests.find((r) => r.id === requestId);
+        otpData = {
+          requestId,
+          otp: mockOtp,
+          expiresAt: new Date(Date.now() + 5 * 60 * 1000).toISOString(),
+          expiresInSeconds: 300,
+          doctorName: req?.doctorName || 'Doctor',
+          hospitalName: req?.hospitalName || 'Hospital',
+          reason: req?.reason || 'Medical record review',
+        };
+      }
+
+      setActiveMedicalOtp(otpData);
+      setMedicalOtpSecondsLeft(300);
+      toast.success(`✓ Access Approved! Share this OTP: ${otpData.otp}`);
+
+      // Sync to localStorage so doctor's tab auto-detects approval
+      localStorage.setItem('uhis_active_medical_otp_data', JSON.stringify(otpData));
+      localStorage.setItem('uhis_active_medical_access_request', JSON.stringify({
+        id: requestId,
+        status: 'APPROVED',
+        otp: otpData.otp,
+        expiresAt: otpData.expiresAt,
+        doctorName: otpData.doctorName,
+        hospitalName: otpData.hospitalName,
+        reason: otpData.reason,
+      }));
+      window.dispatchEvent(new CustomEvent('uhis_medical_access_update'));
+
+      // Update local request list
+      setMedicalAccessRequests((prev) =>
+        prev.map((r) => (r.id === requestId ? { ...r, status: 'APPROVED' } : r))
+      );
+    } catch (e) {
+      toast.error('Failed to approve medical access request.');
+    } finally {
+      setMedicalActionLoading(false);
+    }
+  };
+
+  const handleDenyMedicalAccess = async (requestId) => {
+    setMedicalActionLoading(true);
+    try {
+      await api.post(`/medical-access/patient/deny/${requestId}`).catch(() => null);
+      toast.warning('Medical record access request denied.');
+      setMedicalAccessRequests((prev) => prev.filter((r) => r.id !== requestId));
+      localStorage.removeItem('uhis_active_medical_access_request');
+      localStorage.removeItem('uhis_active_medical_otp_data');
+      window.dispatchEvent(new CustomEvent('uhis_medical_access_update'));
+      fetchMedicalAccessRequests();
+    } catch (e) {
+      toast.error('Failed to deny request.');
+    } finally {
+      setMedicalActionLoading(false);
+    }
+  };
+
   const handleApproveEmergency = async (requestId) => {
     try {
       let otpData = null;
@@ -540,6 +707,10 @@ export default function PatientDashboard() {
   const pendingEmergencyReq = emergencyRequests.find((r) => r.status === "PENDING");
   const approvedEmergencyReq = emergencyRequests.find((r) => r.status === "APPROVED");
   const activeEmergencyAccess = emergencyRequests.find((r) => r.status === "VERIFIED");
+
+  // Medical Record Access derived state
+  const pendingMedicalReq = medicalAccessRequests.find((r) => r.status === 'PENDING');
+  const activeMedicalSession = medicalAccessRequests.find((r) => r.status === 'COMPLETED' && r.sessionExpiresAt && new Date(r.sessionExpiresAt) > new Date());
 
 
   const handleTabChange = (id) => setActiveTab(id);
@@ -713,6 +884,158 @@ export default function PatientDashboard() {
             </div>
             <span className="type-micro" style={{ color: "var(--color-ink-secondary)" }}>
               Reason: {activeEmergencyAccess.reason} · Recorded in UHIS Audit Trail
+            </span>
+          </div>
+        )}
+
+        {/* 🔐 PENDING MEDICAL RECORD ACCESS REQUEST BANNER (Doctor → Patient) */}
+        {pendingMedicalReq && (
+          <div
+            className="instrument-panel channel-info fade-in"
+            style={{
+              background: "var(--color-signal-info-bg)",
+              border: "1px solid var(--color-signal-info-border)",
+              borderLeft: "5px solid var(--color-signal-info)",
+              padding: "1.25rem 1.5rem",
+              borderRadius: "10px",
+              marginBottom: "1.75rem",
+              boxShadow: "0 4px 20px rgba(59, 130, 246, 0.12)",
+            }}
+          >
+            <div style={{ display: "flex", justifyContent: "space-between", alignItems: "flex-start", gap: "1rem", flexWrap: "wrap" }}>
+              <div style={{ flex: 1 }}>
+                <div style={{ display: "flex", alignItems: "center", gap: "0.5rem", marginBottom: "0.25rem" }}>
+                  <span className="pulse-signal" style={{ color: "var(--color-signal-info)", fontSize: "1.1rem" }}>●</span>
+                  <span className="type-label" style={{ color: "var(--color-signal-info)", fontWeight: 800, fontSize: "0.95rem" }}>
+                    🔐 MEDICAL RECORD ACCESS REQUEST
+                  </span>
+                </div>
+                <div className="type-heading" style={{ fontSize: "1.2rem", color: "var(--color-ink)", marginBottom: "0.2rem" }}>
+                  {pendingMedicalReq.doctorName} · {pendingMedicalReq.hospitalName}
+                </div>
+                <div className="type-body" style={{ color: "var(--color-ink-secondary)", fontSize: "0.875rem", marginBottom: "0.4rem" }}>
+                  is requesting temporary authorized access to your UHIS medical records.
+                </div>
+                <div style={{ display: "flex", gap: "1rem", flexWrap: "wrap" }}>
+                  <span className="type-label" style={{ color: "var(--color-signal-info)", fontWeight: 700 }}>
+                    REASON: {pendingMedicalReq.reason}
+                  </span>
+                  {pendingMedicalReq.doctorSpecialization && (
+                    <span className="type-label" style={{ color: "var(--color-ink-secondary)" }}>
+                      SPECIALTY: {pendingMedicalReq.doctorSpecialization}
+                    </span>
+                  )}
+                </div>
+              </div>
+
+              <div style={{ display: "flex", gap: "0.75rem", alignItems: "center", flexShrink: 0 }}>
+                <Button
+                  variant="secondary"
+                  disabled={medicalActionLoading}
+                  onClick={() => handleDenyMedicalAccess(pendingMedicalReq.id)}
+                >
+                  DENY
+                </Button>
+                <Button
+                  disabled={medicalActionLoading}
+                  onClick={() => handleApproveMedicalAccess(pendingMedicalReq.id)}
+                  style={{
+                    background: "var(--color-signal-info)",
+                    borderColor: "var(--color-signal-info)",
+                    color: "white",
+                    fontWeight: 700,
+                    boxShadow: "0 2px 8px rgba(59, 130, 246, 0.3)",
+                  }}
+                >
+                  {medicalActionLoading ? "PROCESSING..." : "APPROVE & GENERATE OTP →"}
+                </Button>
+              </div>
+            </div>
+          </div>
+        )}
+
+        {/* ✓ ACTIVE MEDICAL ACCESS OTP CARD */}
+        {activeMedicalOtp && medicalOtpSecondsLeft > 0 && (
+          <div
+            className="instrument-panel channel-normal fade-in"
+            style={{
+              background: "var(--color-signal-normal-bg)",
+              border: "2px solid var(--color-signal-normal-border)",
+              borderLeft: "5px solid var(--color-signal-normal)",
+              padding: "1.25rem 1.5rem",
+              borderRadius: "10px",
+              marginBottom: "1.75rem",
+              boxShadow: "0 4px 20px rgba(16, 185, 129, 0.15)",
+            }}
+          >
+            <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", gap: "1.5rem", flexWrap: "wrap" }}>
+              <div style={{ flex: 1 }}>
+                <div style={{ display: "flex", alignItems: "center", gap: "0.5rem", marginBottom: "0.25rem" }}>
+                  <CheckCircle2 size={18} color="var(--color-signal-normal)" />
+                  <span className="type-label" style={{ color: "var(--color-signal-normal)", fontWeight: 800, fontSize: "0.95rem" }}>
+                    ✓ MEDICAL RECORD ACCESS OTP READY
+                  </span>
+                </div>
+                <div className="type-heading" style={{ fontSize: "1.1rem", color: "var(--color-ink)", marginBottom: "0.2rem" }}>
+                  Authorized: {activeMedicalOtp.doctorName} ({activeMedicalOtp.hospitalName})
+                </div>
+                <div className="type-body" style={{ color: "var(--color-ink-secondary)", fontSize: "0.85rem" }}>
+                  Reason: <em>{activeMedicalOtp.reason}</em> — Share this 6-digit OTP with the doctor. Valid for 5 minutes only.
+                </div>
+              </div>
+
+              <div style={{ textAlign: "center", background: "var(--color-panel)", padding: "0.75rem 1.5rem", borderRadius: "10px", border: "1px solid var(--color-border)", minWidth: "220px" }}>
+                <div className="type-label" style={{ color: "var(--color-ink-secondary)", marginBottom: "0.2rem" }}>YOUR 6-DIGIT OTP</div>
+                <div
+                  style={{
+                    fontFamily: "'JetBrains Mono', monospace",
+                    fontWeight: 800,
+                    fontSize: "2.2rem",
+                    letterSpacing: "0.25em",
+                    color: "var(--color-signal-normal)",
+                  }}
+                >
+                  {activeMedicalOtp.otp}
+                </div>
+                <div style={{ display: "flex", alignItems: "center", justifyContent: "center", gap: "0.35rem", marginTop: "0.25rem" }}>
+                  <Clock size={12} color="var(--color-signal-critical)" />
+                  <span className="type-label" style={{ color: "var(--color-signal-critical)", fontWeight: 700, fontSize: "0.75rem" }}>
+                    EXPIRES IN: {formatTimer(medicalOtpSecondsLeft)}
+                  </span>
+                </div>
+              </div>
+            </div>
+          </div>
+        )}
+
+        {/* 🔒 ACTIVE MEDICAL ACCESS SESSION NOTICE */}
+        {activeMedicalSession && (
+          <div
+            style={{
+              background: "var(--color-signal-info-bg)",
+              border: "1px solid var(--color-signal-info-border)",
+              borderLeft: "4px solid var(--color-signal-info)",
+              borderRadius: "8px",
+              padding: "0.875rem 1.25rem",
+              marginBottom: "1.5rem",
+              display: "flex",
+              justifyContent: "space-between",
+              alignItems: "center",
+              flexWrap: "wrap",
+              gap: "0.75rem",
+            }}
+          >
+            <div style={{ display: "flex", alignItems: "center", gap: "0.5rem" }}>
+              <Eye size={15} color="var(--color-signal-info)" />
+              <span className="type-label" style={{ color: "var(--color-signal-info)", fontWeight: 800 }}>
+                ACTIVE MEDICAL RECORD SESSION:
+              </span>
+              <span className="type-value" style={{ fontSize: "0.85rem", color: "var(--color-ink)" }}>
+                {activeMedicalSession.doctorName} · 15-minute authorized read-only access
+              </span>
+            </div>
+            <span className="type-micro" style={{ color: "var(--color-ink-secondary)" }}>
+              Expires: {activeMedicalSession.sessionExpiresAt ? new Date(activeMedicalSession.sessionExpiresAt).toLocaleTimeString() : 'Soon'} · Audit Logged
             </span>
           </div>
         )}

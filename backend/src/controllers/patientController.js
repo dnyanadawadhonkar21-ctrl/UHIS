@@ -24,6 +24,7 @@ const getPatientProfile = async (req, res, next) => {
         where: {
           OR: [
             { id: trimmedId },
+            { uhisId: trimmedId },
             { abhaId: trimmedId },
             { userId: trimmedId },
             { user: { email: trimmedId } },
@@ -189,7 +190,7 @@ const getPatientProfile = async (req, res, next) => {
       patient: {
         id: patient.id,
         userId: patient.userId,
-        uhisId: patient.abhaId,
+        uhisId: patient.uhisId || 'PT-2026-000',
         abhaId: patient.abhaId,
         fullName: patient.user?.fullName || 'Patient',
         name: patient.user?.fullName || 'Patient',
@@ -653,6 +654,7 @@ const getPatientBasicInfo = async (req, res, next) => {
       where: {
         OR: [
           { abhaId: trimmedId },
+          { uhisId: trimmedId },
           { id: trimmedId },
           { userId: trimmedId },
           { user: { email: trimmedId } },
@@ -722,11 +724,14 @@ const getPatientBasicInfo = async (req, res, next) => {
       accessLevel: 'BASIC_CRITICAL_ONLY',
       patient: {
         id: patient.id,
-        uhisId: patient.abhaId,
+        uhisId: patient.uhisId || 'PT-2026-000',
+        abhaId: patient.abhaId,
         fullName: patient.user?.fullName || 'Patient',
         age: age || 24,
         gender: patient.gender,
         bloodGroup: patient.bloodGroup || 'B+',
+        height: patient.height || '170 cm',
+        weight: patient.weight || '65 kg',
         allergies: allergies.map((a) => ({
           name: a.name || a.allergen || 'Allergy',
           severity: a.severity || 'SEVERE',
@@ -811,63 +816,100 @@ const getPatientFullInfo = async (req, res, next) => {
       });
     }
 
-    // 5. Check if an active, VERIFIED authorization exists for doctorId + patientId
-    const activeAuth = await prisma.$queryRawUnsafe(
-      `SELECT * FROM "EmergencyAccessRequest"
-       WHERE "doctorId" = $1 AND "patientId" = $2 AND "status" = 'VERIFIED'
-       ORDER BY "verifiedAt" DESC LIMIT 1;`,
+    // 5. Check if an active MedicalAccessSession exists for doctorId + patientId
+    const activeMedicalSession = await prisma.$queryRawUnsafe(
+      `SELECT * FROM "MedicalAccessSession"
+       WHERE "doctorId" = $1 AND "patientId" = $2 AND "status" = 'ACTIVE'
+       ORDER BY "createdAt" DESC LIMIT 1;`,
       doctor.id, patient.id
     );
 
-    const authRecord = activeAuth && activeAuth.length > 0 ? activeAuth[0] : null;
-
-    // 6. Strict Authorization Check
-    if (!authRecord) {
-      console.log(`[AUTH CHECK] No VERIFIED request for doctorId=${doctor.id} patientId=${patient.id}. Found:`, activeAuth);
-      // Create AuditLog: FULL_ACCESS_DENIED
-      await prisma.auditLog.create({
-        data: {
-          userId: req.user.id,
-          action: 'FULL_ACCESS_DENIED',
-          resource: 'PATIENT_FULL',
-          details: `Doctor ${doctor.user.fullName} attempted unauthorized full medical record access for Patient ${patient.user.fullName} (${patient.abhaId}) without patient approval.`,
-          ipAddress: req.ip || req.connection?.remoteAddress || '127.0.0.1',
-        },
-      });
-
-      return res.status(403).json({
-        success: false,
-        level: 2,
-        error: 'AUTHORIZATION_REQUIRED',
-        message: 'Full medical access requires patient authorization. Please submit an access request and verify the patient OTP.',
-      });
-    }
-
-
-    // 7. Strict Backend Expiration Check
+    let authRecord = null;
     const now = new Date();
-    if (!authRecord.accessExpiresAt || now > new Date(authRecord.accessExpiresAt)) {
-      await prisma.$executeRawUnsafe(
-        `UPDATE "EmergencyAccessRequest" SET "status" = 'EXPIRED' WHERE "id" = $1;`,
-        authRecord.id
+
+    if (activeMedicalSession && activeMedicalSession.length > 0) {
+      const sess = activeMedicalSession[0];
+      if (!sess.expiresAt || now >= new Date(sess.expiresAt)) {
+        await prisma.$executeRawUnsafe(
+          `UPDATE "MedicalAccessSession" SET "status" = 'EXPIRED' WHERE "id" = $1;`,
+          sess.id
+        );
+        await prisma.auditLog.create({
+          data: {
+            userId: req.user.id,
+            action: 'MEDICAL_ACCESS_EXPIRED',
+            resource: 'PATIENT_FULL',
+            details: `Doctor ${doctor.user.fullName} attempted reading records on expired session ${sess.id}`,
+            ipAddress: req.ip || req.connection?.remoteAddress || '127.0.0.1',
+          },
+        });
+        return res.status(403).json({
+          success: false,
+          level: 2,
+          error: 'ACCESS_EXPIRED',
+          message: 'Medical record access has expired. Your 15-minute access window has ended.',
+        });
+      }
+      authRecord = {
+        id: sess.id,
+        accessExpiresAt: sess.expiresAt,
+        reason: 'Authorized Medical Record Access',
+      };
+    } else {
+      // Fallback: Check EmergencyAccessRequest
+      const activeAuth = await prisma.$queryRawUnsafe(
+        `SELECT * FROM "EmergencyAccessRequest"
+         WHERE "doctorId" = $1 AND "patientId" = $2 AND "status" = 'VERIFIED'
+         ORDER BY "verifiedAt" DESC LIMIT 1;`,
+        doctor.id, patient.id
       );
 
-      await prisma.auditLog.create({
-        data: {
-          userId: req.user.id,
-          action: 'EMERGENCY_ACCESS_EXPIRED',
-          resource: 'PATIENT_FULL',
-          details: `Doctor ${doctor.user.fullName} attempted reading records on expired emergency authorization ${authRecord.id}`,
-          ipAddress: req.ip || req.connection?.remoteAddress || '127.0.0.1',
-        },
-      });
+      const emerRecord = activeAuth && activeAuth.length > 0 ? activeAuth[0] : null;
 
-      return res.status(403).json({
-        success: false,
-        level: 2,
-        error: 'ACCESS_EXPIRED',
-        message: 'Emergency access authorization has expired. Please submit a new access request.',
-      });
+      if (!emerRecord) {
+        await prisma.auditLog.create({
+          data: {
+            userId: req.user.id,
+            action: 'FULL_ACCESS_DENIED',
+            resource: 'PATIENT_FULL',
+            details: `Doctor ${doctor.user.fullName} attempted unauthorized full medical record access for Patient ${patient.user.fullName} (${patient.abhaId}) without patient approval.`,
+            ipAddress: req.ip || req.connection?.remoteAddress || '127.0.0.1',
+          },
+        });
+
+        return res.status(403).json({
+          success: false,
+          level: 2,
+          error: 'AUTHORIZATION_REQUIRED',
+          message: 'Full medical access requires patient authorization. Please submit an access request and verify the patient OTP.',
+        });
+      }
+
+      if (!emerRecord.accessExpiresAt || now > new Date(emerRecord.accessExpiresAt)) {
+        await prisma.$executeRawUnsafe(
+          `UPDATE "EmergencyAccessRequest" SET "status" = 'EXPIRED' WHERE "id" = $1;`,
+          emerRecord.id
+        );
+
+        await prisma.auditLog.create({
+          data: {
+            userId: req.user.id,
+            action: 'EMERGENCY_ACCESS_EXPIRED',
+            resource: 'PATIENT_FULL',
+            details: `Doctor ${doctor.user.fullName} attempted reading records on expired emergency authorization ${emerRecord.id}`,
+            ipAddress: req.ip || req.connection?.remoteAddress || '127.0.0.1',
+          },
+        });
+
+        return res.status(403).json({
+          success: false,
+          level: 2,
+          error: 'ACCESS_EXPIRED',
+          message: 'Emergency access authorization has expired. Please submit a new access request.',
+        });
+      }
+
+      authRecord = emerRecord;
     }
 
     // Parse allergies
@@ -1073,58 +1115,90 @@ const getPatientMedicalRecords = async (req, res, next) => {
         });
       }
 
-      // Check active VERIFIED emergency authorization in SQLite
-      const activeAuth = await prisma.$queryRawUnsafe(
-        `SELECT * FROM "EmergencyAccessRequest"
-         WHERE "doctorId" = $1 AND "patientId" = $2 AND "status" = 'VERIFIED'
-         ORDER BY "verifiedAt" DESC LIMIT 1;`,
+      // Check active MedicalAccessSession
+      const activeMedicalSession = await prisma.$queryRawUnsafe(
+        `SELECT * FROM "MedicalAccessSession"
+         WHERE "doctorId" = $1 AND "patientId" = $2 AND "status" = 'ACTIVE'
+         ORDER BY "createdAt" DESC LIMIT 1;`,
         doctor.id, patient.id
       );
 
-      authRecord = activeAuth && activeAuth.length > 0 ? activeAuth[0] : null;
-
-      if (!authRecord) {
-        // Create AuditLog: FULL_ACCESS_DENIED
-        await prisma.auditLog.create({
-          data: {
-            userId: req.user.id,
-            action: 'FULL_ACCESS_DENIED',
-            resource: 'PATIENT_MEDICAL_RECORDS',
-            details: `Doctor ${doctor.user.fullName} attempted unauthorized medical records access for Patient ${patient.user.fullName} (${patient.abhaId}) without verified OTP.`,
-            ipAddress: req.ip || req.connection?.remoteAddress || '127.0.0.1',
-          },
-        });
-
-        return res.status(403).json({
-          success: false,
-          error: 'AUTHORIZATION_REQUIRED',
-          message: 'Medical records access requires verified patient OTP authorization.',
-        });
-      }
-
-      // Check expiration
       const now = new Date();
-      if (!authRecord.accessExpiresAt || now > new Date(authRecord.accessExpiresAt)) {
-        await prisma.$executeRawUnsafe(
-          `UPDATE "EmergencyAccessRequest" SET "status" = 'EXPIRED' WHERE "id" = $1;`,
-          authRecord.id
+
+      if (activeMedicalSession && activeMedicalSession.length > 0) {
+        const sess = activeMedicalSession[0];
+        if (!sess.expiresAt || now >= new Date(sess.expiresAt)) {
+          await prisma.$executeRawUnsafe(
+            `UPDATE "MedicalAccessSession" SET "status" = 'EXPIRED' WHERE "id" = $1;`,
+            sess.id
+          );
+          await prisma.auditLog.create({
+            data: {
+              userId: req.user.id,
+              action: 'MEDICAL_ACCESS_EXPIRED',
+              resource: 'PATIENT_MEDICAL_RECORDS',
+              details: `Doctor ${doctor.user.fullName} attempted accessing medical records on expired session ${sess.id}`,
+              ipAddress: req.ip || req.connection?.remoteAddress || '127.0.0.1',
+            },
+          });
+          return res.status(403).json({
+            success: false,
+            error: 'ACCESS_EXPIRED',
+            message: 'Medical record access has expired. Your 15-minute access window has ended.',
+          });
+        }
+        authRecord = sess;
+      } else {
+        // Fallback: Check EmergencyAccessRequest
+        const activeAuth = await prisma.$queryRawUnsafe(
+          `SELECT * FROM "EmergencyAccessRequest"
+           WHERE "doctorId" = $1 AND "patientId" = $2 AND "status" = 'VERIFIED'
+           ORDER BY "verifiedAt" DESC LIMIT 1;`,
+          doctor.id, patient.id
         );
 
-        await prisma.auditLog.create({
-          data: {
-            userId: req.user.id,
-            action: 'EMERGENCY_ACCESS_EXPIRED',
-            resource: 'PATIENT_MEDICAL_RECORDS',
-            details: `Doctor ${doctor.user.fullName} attempted accessing medical records on expired authorization ${authRecord.id}`,
-            ipAddress: req.ip || req.connection?.remoteAddress || '127.0.0.1',
-          },
-        });
+        authRecord = activeAuth && activeAuth.length > 0 ? activeAuth[0] : null;
 
-        return res.status(403).json({
-          success: false,
-          error: 'ACCESS_EXPIRED',
-          message: 'Emergency access authorization has expired. Please submit a new access request.',
-        });
+        if (!authRecord) {
+          await prisma.auditLog.create({
+            data: {
+              userId: req.user.id,
+              action: 'FULL_ACCESS_DENIED',
+              resource: 'PATIENT_MEDICAL_RECORDS',
+              details: `Doctor ${doctor.user.fullName} attempted unauthorized medical records access for Patient ${patient.user.fullName} (${patient.abhaId}) without verified OTP.`,
+              ipAddress: req.ip || req.connection?.remoteAddress || '127.0.0.1',
+            },
+          });
+
+          return res.status(403).json({
+            success: false,
+            error: 'AUTHORIZATION_REQUIRED',
+            message: 'Medical records access requires verified patient OTP authorization.',
+          });
+        }
+
+        if (!authRecord.accessExpiresAt || now > new Date(authRecord.accessExpiresAt)) {
+          await prisma.$executeRawUnsafe(
+            `UPDATE "EmergencyAccessRequest" SET "status" = 'EXPIRED' WHERE "id" = $1;`,
+            authRecord.id
+          );
+
+          await prisma.auditLog.create({
+            data: {
+              userId: req.user.id,
+              action: 'EMERGENCY_ACCESS_EXPIRED',
+              resource: 'PATIENT_MEDICAL_RECORDS',
+              details: `Doctor ${doctor.user.fullName} attempted accessing medical records on expired authorization ${authRecord.id}`,
+              ipAddress: req.ip || req.connection?.remoteAddress || '127.0.0.1',
+            },
+          });
+
+          return res.status(403).json({
+            success: false,
+            error: 'ACCESS_EXPIRED',
+            message: 'Emergency access authorization has expired. Please submit a new access request.',
+          });
+        }
       }
 
       // Audit log success
@@ -1229,6 +1303,127 @@ const getPatientMedicalRecords = async (req, res, next) => {
   }
 };
 
+// ============================================================================
+// SEARCH PATIENT BY UNIQUE ABHA ID
+// GET /api/v1/patients/search/abha
+// GET /api/v1/patients/search/abha/:abhaId
+// ============================================================================
+const searchPatientByAbha = async (req, res, next) => {
+  try {
+    const rawAbhaId = req.query.abhaId || req.params.abhaId || req.query.q || req.query.query;
+
+    if (!rawAbhaId || typeof rawAbhaId !== 'string' || !rawAbhaId.trim()) {
+      return res.status(400).json({
+        success: false,
+        message: 'Please enter an ABHA ID.',
+      });
+    }
+
+    const trimmedAbhaId = rawAbhaId.trim();
+
+    // Format validation: check length and permitted characters (alphanumeric and hyphens)
+    if (trimmedAbhaId.length < 3 || trimmedAbhaId.length > 35 || !/^[A-Za-z0-9-]+$/.test(trimmedAbhaId)) {
+      return res.status(400).json({
+        success: false,
+        message: 'Invalid ABHA ID format. Please enter a valid ABHA ID (e.g., 91-4782-3391-6284).',
+      });
+    }
+
+    // Query database using unique ABHA ID
+    const patient = await prisma.patient.findUnique({
+      where: { abhaId: trimmedAbhaId },
+      include: {
+        user: { select: { fullName: true, email: true, phoneNumber: true } },
+        diagnoses: { include: { doctor: { include: { user: true, hospital: true } } }, orderBy: { diagnosedDate: 'desc' } },
+        medicalRecords: { orderBy: { recordDate: 'desc' } },
+        prescriptions: { include: { items: true, doctor: { include: { user: true } } }, orderBy: { createdAt: 'desc' } },
+        labReports: { orderBy: { createdAt: 'desc' } },
+      },
+    });
+
+    if (!patient) {
+      return res.status(404).json({
+        success: false,
+        message: 'No patient found with this ABHA ID.',
+      });
+    }
+
+    let age = 30;
+    if (patient.dateOfBirth) {
+      age = new Date().getFullYear() - new Date(patient.dateOfBirth).getFullYear();
+    }
+
+    let allergies = [];
+    if (patient.allergies) {
+      try {
+        const parsed = JSON.parse(patient.allergies);
+        allergies = Array.isArray(parsed) ? parsed : [parsed];
+      } catch (e) {
+        allergies = patient.allergies.split(',').map((a, idx) => ({ id: `alg-${idx}`, name: a.trim() }));
+      }
+    }
+
+    // Audit log search (if valid authenticated user)
+    if (req.user && req.user.id) {
+      try {
+        const userExists = await prisma.user.findUnique({ where: { id: req.user.id }, select: { id: true } });
+        if (userExists) {
+          await prisma.auditLog.create({
+            data: {
+              userId: req.user.id,
+              action: 'PATIENT_SEARCH_ABHA',
+              resource: 'PATIENT',
+              details: `Doctor/User ${req.user.fullName || req.user.email} searched patient by unique ABHA ID: ${trimmedAbhaId}`,
+              ipAddress: req.ip || req.connection?.remoteAddress || '127.0.0.1',
+            },
+          });
+        }
+      } catch (e) {}
+    }
+
+    const tokenSuffix = patient.abhaId.replace(/[^A-Za-z0-9]/g, '').slice(-3).toUpperCase() || '01';
+
+    return res.status(200).json({
+      success: true,
+      message: 'Patient retrieved successfully.',
+      patient: {
+        id: patient.id,
+        userId: patient.userId,
+        token: `T-${tokenSuffix}`,
+        patientName: patient.user?.fullName || 'Patient',
+        name: patient.user?.fullName || 'Patient',
+        fullName: patient.user?.fullName || 'Patient',
+        email: patient.user?.email,
+        phone: patient.user?.phoneNumber,
+        phoneNumber: patient.user?.phoneNumber,
+        patientId: patient.uhisId || patient.id,
+        uhisId: patient.uhisId || 'PT-2026-000',
+        abhaId: patient.abhaId,
+        age,
+        gender: patient.gender === 'MALE' ? 'Male' : patient.gender === 'FEMALE' ? 'Female' : 'Other',
+        dateOfBirth: patient.dateOfBirth,
+        bloodGroup: patient.bloodGroup || 'O+',
+        height: patient.height || '170 cm',
+        weight: patient.weight || '65 kg',
+        address: patient.address || 'Address on file',
+        emergencyContact: patient.emergencyContact || 'Contact on file',
+        emergencyPhone: patient.emergencyPhone,
+        allergies,
+        chiefComplaint: 'OPD Consultation via ABHA Search',
+        priority: 'routine',
+        status: 'waiting',
+        vitals: { bp: '120/80', pulse: '76', spo2: '98%', temp: '98.6°F' },
+        diagnosesCount: (patient.diagnoses || []).length,
+        recordsCount: (patient.medicalRecords || []).length,
+        prescriptionsCount: (patient.prescriptions || []).length,
+        labReportsCount: (patient.labReports || []).length,
+      },
+    });
+  } catch (error) {
+    next(error);
+  }
+};
+
 module.exports = {
   getPatientProfile,
   getUnifiedTimeline,
@@ -1241,6 +1436,8 @@ module.exports = {
   getPatientBasicInfo,
   getPatientFullInfo,
   getPatientMedicalRecords,
+  searchPatientByAbha,
 };
+
 
 

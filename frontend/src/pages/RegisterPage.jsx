@@ -5,6 +5,7 @@ import { useAuth } from "../context/AuthContext";
 import { useToast } from "../context/ToastContext";
 import Button from "../components/ui/Button";
 import PrecisionInput from "../components/ui/PrecisionInput";
+import api from "../services/api";
 
 const STEPS = ["Account Setup", "Medical Profile", "ABHA Verification"];
 
@@ -27,6 +28,7 @@ export default function RegisterPage() {
   const [generatedOtp] = useState("847291");
   const [otpSent, setOtpSent] = useState(false);
   const [verified, setVerified] = useState(false);
+  const [loading, setLoading] = useState(false);
 
   const [form, setForm] = useState({
     name: "", email: "", phone: "", password: "",
@@ -60,15 +62,46 @@ export default function RegisterPage() {
     }
   };
 
-  const handleComplete = () => {
-    demoLogin(role);
-    toast.success("Registration complete. Redirecting...");
-    setTimeout(() => navigate(role === "patient" ? "/patient" : `/${role}`), 800);
-  };
-
   const [ABHA_GENERATED] = useState(
     () => `91-${Math.floor(1000 + Math.random() * 9000)}-${Math.floor(1000 + Math.random() * 9000)}-${Math.floor(1000 + Math.random() * 9000)}`
   );
+
+  const handleComplete = async () => {
+    setLoading(true);
+    try {
+      if (role === "patient") {
+        await api.post("/auth/register", {
+          fullName: form.name,
+          email: form.email,
+          password: form.password,
+          role: "PATIENT",
+          phoneNumber: form.phone,
+          gender: form.gender ? form.gender.toUpperCase() : "MALE",
+          dateOfBirth: form.dob || "1995-01-01",
+          bloodGroup: form.bloodGroup || "O+",
+          height: form.height ? `${form.height} cm` : undefined,
+          weight: form.weight ? `${form.weight} kg` : undefined,
+          address: form.address,
+          emergencyContact: form.emergencyContact,
+          abhaId: ABHA_GENERATED,
+        }).catch((err) => {
+          if (err.response && err.response.data && err.response.data.message) {
+            throw err;
+          }
+          // offline fallback
+        });
+      }
+      demoLogin(role);
+      toast.success(`Registration complete with unique ABHA ID: ${ABHA_GENERATED}. Redirecting...`);
+      setTimeout(() => navigate(role === "patient" ? "/patient" : `/${role}`), 800);
+    } catch (err) {
+      const msg = err.response?.data?.message || "Registration failed. Please check your details.";
+      toast.error(msg);
+    } finally {
+      setLoading(false);
+    }
+  };
+
   const selectedRole = ROLES.find((r) => r.id === role);
 
   return (

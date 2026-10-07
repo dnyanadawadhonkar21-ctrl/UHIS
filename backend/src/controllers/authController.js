@@ -3,12 +3,34 @@ const jwt = require('jsonwebtoken');
 const prisma = require('../config/prisma');
 const { JWT_SECRET, JWT_EXPIRES_IN } = require('../config/jwt');
 
-// Helper to generate unique ABHA ID
-const generateAbhaId = () => {
-  const part1 = Math.floor(1000 + Math.random() * 9000);
-  const part2 = Math.floor(1000 + Math.random() * 9000);
-  const part3 = Math.floor(1000 + Math.random() * 9000);
-  return `${part1}-${part2}-${part3}`;
+// Helper to generate unique ABDM-compliant ABHA ID (14 digits with hyphens: 91-XXXX-XXXX-XXXX)
+const generateAbhaId = async () => {
+  for (let attempt = 0; attempt < 10; attempt++) {
+    const part1 = '91';
+    const part2 = Math.floor(1000 + Math.random() * 9000);
+    const part3 = Math.floor(1000 + Math.random() * 9000);
+    const part4 = Math.floor(1000 + Math.random() * 9000);
+    const candidate = `${part1}-${part2}-${part3}-${part4}`;
+    const exists = await prisma.patient.findUnique({ where: { abhaId: candidate } });
+    if (!exists) {
+      return candidate;
+    }
+  }
+  return `91-${Date.now().toString().slice(-4)}-${Math.floor(1000 + Math.random() * 9000)}-${Math.floor(1000 + Math.random() * 9000)}`;
+};
+
+// Helper to generate unique UHIS ID (e.g. PT-2026-001)
+const generateUhisId = async () => {
+  const currentYear = new Date().getFullYear();
+  const count = await prisma.patient.count();
+  for (let attempt = 0; attempt < 25; attempt++) {
+    const candidate = `PT-${currentYear}-${String(count + 1 + attempt).padStart(3, '0')}`;
+    const exists = await prisma.patient.findUnique({ where: { uhisId: candidate } });
+    if (!exists) {
+      return candidate;
+    }
+  }
+  return `PT-${currentYear}-${Date.now().toString().slice(-4)}`;
 };
 
 const register = async (req, res, next) => {
@@ -16,16 +38,44 @@ const register = async (req, res, next) => {
     const {
       fullName, email, password, role = 'PATIENT', phoneNumber, gender, dateOfBirth,
       bloodGroup, height, weight, address, emergencyContact, emergencyPhone,
-      allergies, chronicConditions, pastSurgeries, pastMedications
+      allergies, chronicConditions, pastSurgeries, pastMedications,
+      abhaId: customAbhaId
     } = req.body;
 
     if (!fullName || !email || !password) {
       return res.status(400).json({ success: false, message: 'Full name, email, and password are required.' });
     }
 
-    const existingUser = await prisma.user.findUnique({ where: { email } });
+    const existingUser = await prisma.user.findUnique({ where: { email: email.trim().toLowerCase() } });
     if (existingUser) {
       return res.status(400).json({ success: false, message: 'Email address is already registered.' });
+    }
+
+    let finalAbhaId = null;
+    let finalUhisId = null;
+    if (role === 'PATIENT') {
+      finalUhisId = await generateUhisId();
+      if (customAbhaId && typeof customAbhaId === 'string' && customAbhaId.trim()) {
+        const trimmedAbha = customAbhaId.trim();
+        // Validation: length and format
+        if (trimmedAbha.length < 3 || trimmedAbha.length > 35 || !/^[A-Za-z0-9-]+$/.test(trimmedAbha)) {
+          return res.status(400).json({
+            success: false,
+            message: 'Invalid ABHA ID format. Please enter a valid ABHA ID (e.g., 91-4782-3391-6284).',
+          });
+        }
+        // Unique check before creation
+        const existingAbha = await prisma.patient.findUnique({ where: { abhaId: trimmedAbha } });
+        if (existingAbha) {
+          return res.status(400).json({
+            success: false,
+            message: 'This ABHA ID is already registered in the system.',
+          });
+        }
+        finalAbhaId = trimmedAbha;
+      } else {
+        finalAbhaId = await generateAbhaId();
+      }
     }
 
     const hashedPassword = await bcrypt.hash(password, 10);
@@ -33,21 +83,21 @@ const register = async (req, res, next) => {
     const result = await prisma.$transaction(async (tx) => {
       const newUser = await tx.user.create({
         data: {
-          fullName,
-          email,
+          fullName: fullName.trim(),
+          email: email.trim().toLowerCase(),
           password: hashedPassword,
           role,
-          phoneNumber,
+          phoneNumber: phoneNumber ? phoneNumber.trim() : null,
         },
       });
 
       // Auto-create profile if PATIENT
       if (role === 'PATIENT') {
-        const abhaId = generateAbhaId();
         await tx.patient.create({
           data: {
             userId: newUser.id,
-            abhaId,
+            uhisId: finalUhisId,
+            abhaId: finalAbhaId,
             gender: gender || 'MALE',
             dateOfBirth: dateOfBirth ? new Date(dateOfBirth) : new Date('1998-05-15'),
             bloodGroup: bloodGroup || 'O+',
@@ -77,7 +127,7 @@ const register = async (req, res, next) => {
         userId: result.id,
         action: 'USER_REGISTER',
         resource: 'AUTH',
-        details: `User registered with role ${result.role}`,
+        details: `User registered with role ${result.role}${finalAbhaId ? ` and ABHA ID ${finalAbhaId}` : ''}`,
       },
     });
 
@@ -90,9 +140,25 @@ const register = async (req, res, next) => {
         fullName: result.fullName,
         email: result.email,
         role: result.role,
+        abhaId: finalAbhaId,
       },
     });
   } catch (error) {
+    if (error.code === 'P2002') {
+      const target = String(error.meta?.target || error.message || '');
+      if (target.includes('abhaId')) {
+        return res.status(400).json({
+          success: false,
+          message: 'This ABHA ID is already registered in the system.',
+        });
+      }
+      if (target.includes('email')) {
+        return res.status(400).json({
+          success: false,
+          message: 'Email address is already registered.',
+        });
+      }
+    }
     next(error);
   }
 };

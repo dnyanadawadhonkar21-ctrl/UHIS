@@ -1,5 +1,5 @@
 import React, { useState, useEffect } from "react";
-import { Stethoscope, FileText, Plus, X, AlertTriangle, ShieldCheck, Lock, Clock, CheckCircle2, User, KeyRound, Eye, RefreshCw, Download, Image as ImageIcon, FileSpreadsheet, Layers, ExternalLink, ZoomIn, ZoomOut, Contrast } from "lucide-react";
+import { Stethoscope, FileText, Plus, X, AlertTriangle, ShieldCheck, Lock, Clock, CheckCircle2, User, KeyRound, Eye, RefreshCw, Download, Image as ImageIcon, FileSpreadsheet, Layers, ExternalLink, ZoomIn, ZoomOut, Contrast, Search, Sparkles, UserCheck } from "lucide-react";
 import AppLayout from "../components/layout/AppLayout";
 import InstrumentPanel from "../components/ui/InstrumentPanel";
 import StatusCode from "../components/ui/StatusCode";
@@ -43,6 +43,13 @@ export default function DoctorDashboard() {
   const [rxItems, setRxItems] = useState([{ name: "", dosage: "", frequency: "1-0-1", duration: "" }]);
   const [clinicalNotes, setClinicalNotes] = useState("");
 
+  // ABHA ID Search State
+  const [abhaSearchQuery, setAbhaSearchQuery] = useState("");
+  const [abhaSearchResult, setAbhaSearchResult] = useState(null);
+  const [abhaSearchLoading, setAbhaSearchLoading] = useState(false);
+  const [abhaSearchError, setAbhaSearchError] = useState("");
+  const [abhaSearched, setAbhaSearched] = useState(false);
+
   // Emergency Access Doctor State
   const [emergencyUHISId, setEmergencyUHISId] = useState("patient22@uhis.org");
   const [basicPatientInfo, setBasicPatientInfo] = useState(null);
@@ -80,7 +87,8 @@ export default function DoctorDashboard() {
       patientName: "Rahul Verma",
       email: "patient22@uhis.org",
       patientId: "PT-2026-022",
-      abhaId: "RV-2026-001",
+      uhisId: "PT-2026-022",
+      abhaId: "91-4782-3391-6284",
       age: 26,
       gender: "Male",
       height: "176 cm",
@@ -98,7 +106,8 @@ export default function DoctorDashboard() {
       patientName: "Ramesh Patil",
       email: "patient23@uhis.org",
       patientId: "PT-2026-023",
-      abhaId: "PT-2026-023",
+      uhisId: "PT-2026-023",
+      abhaId: "91-3321-0011-4432",
       age: 35,
       gender: "Male",
       height: "172 cm",
@@ -116,7 +125,8 @@ export default function DoctorDashboard() {
       patientName: "Priya Sharma",
       email: "patient24@uhis.org",
       patientId: "PT-2026-024",
-      abhaId: "PT-2026-024",
+      uhisId: "PT-2026-024",
+      abhaId: "91-7743-2218-5561",
       age: 29,
       gender: "Female",
       height: "160 cm",
@@ -134,7 +144,8 @@ export default function DoctorDashboard() {
       patientName: "Amit Kulkarni",
       email: "amit.kulkarni@uhis.org",
       patientId: "PT-2026-025",
-      abhaId: "PT-2026-025",
+      uhisId: "PT-2026-025",
+      abhaId: "91-9912-4430-1102",
       age: 42,
       gender: "Male",
       height: "174 cm",
@@ -152,7 +163,8 @@ export default function DoctorDashboard() {
       patientName: "Sneha Deshmukh",
       email: "sneha.deshmukh@uhis.org",
       patientId: "PT-2026-026",
-      abhaId: "PT-2026-026",
+      uhisId: "PT-2026-026",
+      abhaId: "91-5508-7761-0099",
       age: 31,
       gender: "Female",
       height: "162 cm",
@@ -170,7 +182,8 @@ export default function DoctorDashboard() {
       patientName: "Arjun Mehta",
       email: "arjun.mehta@uhis.org",
       patientId: "PT-2026-027",
-      abhaId: "PT-2026-027",
+      uhisId: "PT-2026-027",
+      abhaId: "91-1122-8834-6670",
       age: 48,
       gender: "Male",
       height: "178 cm",
@@ -188,7 +201,8 @@ export default function DoctorDashboard() {
       patientName: "Neha Joshi",
       email: "neha.joshi@uhis.org",
       patientId: "PT-2026-028",
-      abhaId: "PT-2026-028",
+      uhisId: "PT-2026-028",
+      abhaId: "91-4490-1123-7788",
       age: 38,
       gender: "Female",
       height: "165 cm",
@@ -206,7 +220,8 @@ export default function DoctorDashboard() {
       patientName: "Karan Shah",
       email: "karan.shah@uhis.org",
       patientId: "PT-2026-029",
-      abhaId: "PT-2026-029",
+      uhisId: "PT-2026-029",
+      abhaId: "91-8833-2211-9944",
       age: 45,
       gender: "Male",
       height: "175 cm",
@@ -261,7 +276,8 @@ export default function DoctorDashboard() {
           patientName: apt.patient?.user?.fullName || "Patient",
           name: apt.patient?.user?.fullName || "Patient",
           email: apt.patient?.user?.email,
-          patientId: apt.patient?.abhaId || apt.patient?.id,
+          patientId: apt.patient?.uhisId || apt.patient?.id,
+          uhisId: apt.patient?.uhisId,
           abhaId: apt.patient?.abhaId,
           age: apt.patient?.dateOfBirth ? (new Date().getFullYear() - new Date(apt.patient.dateOfBirth).getFullYear()) : 30,
           gender: apt.patient?.gender === "MALE" ? "Male" : apt.patient?.gender === "FEMALE" ? "Female" : "Other",
@@ -282,6 +298,104 @@ export default function DoctorDashboard() {
     }
   };
 
+  // ABHA ID Search Handlers
+  const handleSearchAbha = async (queryOverride) => {
+    const rawQuery = (queryOverride !== undefined ? queryOverride : abhaSearchQuery);
+    const query = (rawQuery || "").trim();
+
+    if (!query) {
+      setAbhaSearchError("Please enter an ABHA ID to search.");
+      setAbhaSearchResult(null);
+      setAbhaSearched(true);
+      return;
+    }
+
+    setAbhaSearchLoading(true);
+    setAbhaSearchError("");
+    setAbhaSearched(true);
+
+    try {
+      const res = await api.get(`/patients/search/abha?abhaId=${encodeURIComponent(query)}`);
+      if (res && res.data && res.data.success && res.data.patient) {
+        setAbhaSearchResult(res.data.patient);
+        setAbhaSearchError("");
+        toast.success(`Patient found: ${res.data.patient.patientName || res.data.patient.fullName}`);
+      } else {
+        setAbhaSearchResult(null);
+        setAbhaSearchError(res?.data?.message || "No patient found with this ABHA ID.");
+      }
+    } catch (err) {
+      if (err.response && err.response.data && err.response.data.message) {
+        setAbhaSearchResult(null);
+        setAbhaSearchError(err.response.data.message);
+      } else {
+        // Fallback check against local canonical queue if offline/network error
+        const localMatch = opdQueue.find(
+          (p) =>
+            (p.abhaId && p.abhaId.toLowerCase() === query.toLowerCase()) ||
+            (p.patientId && p.patientId.toLowerCase() === query.toLowerCase()) ||
+            (p.email && p.email.toLowerCase() === query.toLowerCase())
+        );
+        if (localMatch) {
+          setAbhaSearchResult(localMatch);
+          setAbhaSearchError("");
+          toast.success(`Patient found: ${localMatch.patientName || localMatch.name}`);
+        } else {
+          setAbhaSearchResult(null);
+          setAbhaSearchError("No patient found with this ABHA ID.");
+        }
+      }
+    } finally {
+      setAbhaSearchLoading(false);
+    }
+  };
+
+  const handleClearAbhaSearch = () => {
+    setAbhaSearchQuery("");
+    setAbhaSearchResult(null);
+    setAbhaSearchError("");
+    setAbhaSearched(false);
+  };
+
+  const handleSelectSearchedPatient = (patient) => {
+    if (!patient) return;
+    // Check if patient already exists in local queue
+    const exists = opdQueue.some(
+      (p) => (p.abhaId && p.abhaId === patient.abhaId) || (p.id && p.id === patient.id)
+    );
+    if (!exists) {
+      setOpdQueue((prev) => [
+        {
+          ...patient,
+          token: patient.token || `T-${String(prev.length + 1).padStart(2, "0")}`,
+          status: "in-consultation",
+        },
+        ...prev,
+      ]);
+    }
+    handleSelectPatient(patient);
+    toast.success(`Opening consultation for ${patient.patientName || patient.name || 'Patient'}...`);
+  };
+
+  const handleAddToQueue = (patient) => {
+    if (!patient) return;
+    const exists = opdQueue.some(
+      (p) => (p.abhaId && p.abhaId === patient.abhaId) || (p.id && p.id === patient.id)
+    );
+    if (exists) {
+      toast.info(`${patient.patientName || patient.name} is already present in today's OPD Queue.`);
+      return;
+    }
+    const newQueueItem = {
+      ...patient,
+      token: patient.token || `T-${String(opdQueue.length + 1).padStart(2, "0")}`,
+      status: "waiting",
+      priority: "routine",
+    };
+    setOpdQueue((prev) => [...prev, newQueueItem]);
+    toast.success(`${patient.patientName || patient.name} added to today's OPD Queue.`);
+  };
+
   const handleSelectPatient = (patientItem) => {
     setActivePatient(patientItem);
     setOpdAuthStep("LOCK_PROMPT");
@@ -300,13 +414,13 @@ export default function DoctorDashboard() {
     setOpdAuthError("");
 
     try {
-      const res = await api.post("/emergency-access/request", {
-        patientUHISId: targetId.trim(),
+      const res = await api.post("/medical-access/request", {
+        patientId: targetId.trim(),
         reason: "OPD Consultation & Medical Record Review",
       }).catch((err) => {
         const reqObj = {
-          id: "REQ-" + Math.floor(100000 + Math.random() * 900000),
-          patientUHISId: targetId.trim(),
+          id: "MREQ-" + Math.floor(100000 + Math.random() * 900000),
+          patientId: targetId.trim(),
           patientName: activePatient.patientName,
           doctorName: displayName,
           hospitalName: hospitalName,
@@ -318,9 +432,28 @@ export default function DoctorDashboard() {
       });
 
       if (res.data && res.data.success) {
+        // Handle case where doctor already has an active session
+        if (res.data.alreadyActive && res.data.session) {
+          const session = res.data.session;
+          toast.success(`✓ You already have an active access session for ${activePatient.patientName}!`);
+          const keys = [
+            activePatient.patientId, activePatient.abhaId, activePatient.email,
+            activePatient.patientName, session.patientId, session.patientUhisId, session.patientAbhaId
+          ];
+          setAuthorizedPatients((prev) => ({
+            ...prev,
+            ...Object.fromEntries(keys.filter(Boolean).map((k) => [k, true])),
+          }));
+          setOpdAuthStep("LOCK_PROMPT");
+          setOpdOtpInput("");
+          const fetchTarget = activePatient.email || activePatient.patientId || activePatient.abhaId;
+          fetchPatientDetails(fetchTarget);
+          return;
+        }
+
         const reqData = res.data.request || {
-          id: "REQ-" + Math.floor(100000 + Math.random() * 900000),
-          patientUHISId: targetId.trim(),
+          id: "MREQ-" + Math.floor(100000 + Math.random() * 900000),
+          patientId: targetId.trim(),
           patientName: activePatient.patientName,
           doctorName: displayName,
           hospitalName: hospitalName,
@@ -329,9 +462,14 @@ export default function DoctorDashboard() {
           createdAt: new Date().toISOString(),
         };
 
-        // Broadcast to patient portal
-        localStorage.setItem("uhis_active_emergency_request", JSON.stringify(reqData));
-        window.dispatchEvent(new CustomEvent("uhis_emergency_update"));
+        // Broadcast to patient portal via medical-access channel
+        localStorage.setItem("uhis_active_medical_access_request", JSON.stringify({
+          ...reqData,
+          patientName: activePatient.patientName,
+          patientEmail: activePatient.email,
+          patientId: targetId.trim(),
+        }));
+        window.dispatchEvent(new CustomEvent("uhis_medical_access_update"));
 
         toast.success(`Access request sent to ${activePatient.patientName}'s portal! Awaiting patient approval.`);
         setOpdActiveRequest(reqData);
@@ -357,10 +495,12 @@ export default function DoctorDashboard() {
     setOpdAuthError("");
 
     try {
-      const requestId = opdActiveRequest?.id || "REQ-OPD-MOCK";
-      const res = await api.post("/emergency-access/verify", {
-        requestId,
+      const requestId = opdActiveRequest?.id || "MREQ-OPD-MOCK";
+      // Use the medical-access verify-otp endpoint (not emergency-access)
+      const res = await api.post("/medical-access/doctor/verify-otp", {
+        accessRequestId: requestId,
         otp: opdOtpInput.trim(),
+        patientId: activePatient.email || activePatient.patientId || activePatient.abhaId,
       }).catch((err) => {
         if (opdOtpInput.trim().length === 6) {
           return { data: { success: true, mock: true, requestId, message: "Access granted" } };
@@ -377,6 +517,10 @@ export default function DoctorDashboard() {
         const k5 = selectedPatientData?.patient?.id;
         const k6 = selectedPatientData?.patient?.abhaId;
         const k7 = selectedPatientData?.patient?.uhisId;
+        // Also try session patient IDs if present
+        const k8 = res.data.patient?.id;
+        const k9 = res.data.patient?.uhisId;
+        const k10 = res.data.patient?.abhaId;
         setAuthorizedPatients((prev) => ({
           ...prev,
           ...(k1 && { [k1]: true }),
@@ -386,9 +530,15 @@ export default function DoctorDashboard() {
           ...(k5 && { [k5]: true }),
           ...(k6 && { [k6]: true }),
           ...(k7 && { [k7]: true }),
+          ...(k8 && { [k8]: true }),
+          ...(k9 && { [k9]: true }),
+          ...(k10 && { [k10]: true }),
         }));
         setOpdAuthStep("LOCK_PROMPT");
         setOpdOtpInput("");
+        // Clean up medical access localStorage entries
+        localStorage.removeItem("uhis_active_medical_access_request");
+        localStorage.removeItem("uhis_active_medical_otp_data");
         const fetchTarget = activePatient.email || activePatient.patientId || activePatient.abhaId;
         fetchPatientDetails(fetchTarget);
       } else {
@@ -539,7 +689,7 @@ export default function DoctorDashboard() {
         }
       }
 
-      // 2. Check localStorage cross-tab demo sync
+      // 2. Check localStorage cross-tab demo sync (Emergency)
       const storedOtpData = localStorage.getItem("uhis_active_emergency_otp_data");
       if (storedOtpData) {
         const parsed = JSON.parse(storedOtpData);
@@ -551,15 +701,27 @@ export default function DoctorDashboard() {
         }
       }
 
-      // 3. OPD Queue Permission Cross-Tab Sync
+      // 3. OPD Queue Permission Cross-Tab Sync: Medical Access channel
       if (opdAuthStep === "REQUEST_SENT") {
-        const storedReq = localStorage.getItem("uhis_active_emergency_request");
-        if (storedReq) {
-          const parsedReq = JSON.parse(storedReq);
+        // Check medical-access localStorage for patient approval
+        const storedMedReq = localStorage.getItem("uhis_active_medical_access_request");
+        if (storedMedReq) {
+          const parsedReq = JSON.parse(storedMedReq);
           if (parsedReq && parsedReq.status === "APPROVED") {
             setOpdActiveRequest((prev) => prev || parsedReq);
             setOpdAuthStep("OTP_ENTRY");
+            toast.info(`✓ Patient approved access! Enter the OTP now.`);
           }
+        }
+
+        // Also check backend for request status
+        if (opdActiveRequest?.id && opdActiveRequest.id.startsWith('MREQ-') === false) {
+          try {
+            const statusRes = await api.get(`/medical-access/doctor/status/${opdActiveRequest.id}`).catch(() => null);
+            if (statusRes && statusRes.data && statusRes.data.success && statusRes.data.request?.status === 'APPROVED') {
+              setOpdAuthStep("OTP_ENTRY");
+            }
+          } catch (e) { }
         }
       }
     } catch (e) {
@@ -1974,7 +2136,355 @@ export default function DoctorDashboard() {
         {/* OPD QUEUE TAB */}
 
         {activeTab === "queue" && (
-          <div className="fade-in">
+          <div className="fade-in" style={{ display: "flex", flexDirection: "column", gap: "1.5rem" }}>
+            {/* 1. SEARCH PATIENT BY UNIQUE ABHA ID */}
+            <div className="instrument-panel" style={{ padding: 0, overflow: "hidden" }}>
+              <div className="panel-header" style={{ display: "flex", justifyContent: "space-between", alignItems: "center" }}>
+                <div style={{ display: "flex", alignItems: "center", gap: "0.6rem" }}>
+                  <Search size={18} style={{ color: "var(--color-signal-info)" }} />
+                  <div>
+                    <div className="type-label" style={{ color: "var(--color-ink-secondary)", marginBottom: "0.15rem" }}>
+                      PATIENT IDENTIFICATION & SEARCH
+                    </div>
+                    <div className="type-heading" style={{ fontSize: "1.1rem" }}>
+                      Search Patient by ABHA ID
+                    </div>
+                  </div>
+                </div>
+                <span
+                  style={{
+                    display: "inline-flex",
+                    alignItems: "center",
+                    gap: "0.35rem",
+                    background: "var(--color-signal-info-bg)",
+                    color: "var(--color-signal-info)",
+                    border: "1px solid var(--color-signal-info-border)",
+                    borderRadius: "99px",
+                    padding: "0.2rem 0.65rem",
+                    fontSize: "0.72rem",
+                    fontWeight: 700,
+                  }}
+                >
+                  <Sparkles size={12} /> Unique ABHA Search
+                </span>
+              </div>
+
+              <div style={{ padding: "1.25rem" }}>
+                {/* Search Bar Row */}
+                <form
+                  onSubmit={(e) => {
+                    e.preventDefault();
+                    handleSearchAbha();
+                  }}
+                  style={{ display: "flex", flexDirection: "column", gap: "0.45rem" }}
+                >
+                  <label htmlFor="abha-search-input" className="type-label" style={{ color: "var(--color-ink-secondary)", fontWeight: 700, fontSize: "0.78rem" }}>
+                    ABHA ID
+                  </label>
+                  <div style={{ display: "flex", gap: "0.75rem", alignItems: "center", flexWrap: "wrap" }}>
+                    <div style={{ position: "relative", flex: 1, minWidth: "280px" }}>
+                      <input
+                        id="abha-search-input"
+                        type="text"
+                        className="precision-input"
+                        value={abhaSearchQuery}
+                        onChange={(e) => {
+                          setAbhaSearchQuery(e.target.value);
+                          if (abhaSearchError) setAbhaSearchError("");
+                        }}
+                        placeholder="Enter ABHA ID"
+                        style={{
+                          paddingLeft: "2.5rem",
+                          paddingRight: abhaSearchQuery ? "2.5rem" : "1rem",
+                          width: "100%",
+                          height: "44px",
+                          fontSize: "0.95rem",
+                          fontWeight: 500,
+                        }}
+                      />
+                      <Search
+                        size={17}
+                        style={{
+                          position: "absolute",
+                          left: "0.9rem",
+                          top: "50%",
+                          transform: "translateY(-50%)",
+                          color: "var(--color-ink-muted)",
+                          pointerEvents: "none",
+                        }}
+                      />
+                      {abhaSearchQuery && (
+                        <button
+                          type="button"
+                          onClick={handleClearAbhaSearch}
+                          style={{
+                            position: "absolute",
+                            right: "0.75rem",
+                            top: "50%",
+                            transform: "translateY(-50%)",
+                            background: "none",
+                            border: "none",
+                            cursor: "pointer",
+                            color: "var(--color-ink-muted)",
+                            display: "flex",
+                            alignItems: "center",
+                            padding: "0.25rem",
+                          }}
+                          title="Clear search"
+                        >
+                          <X size={16} />
+                        </button>
+                      )}
+                    </div>
+
+                    <Button
+                      id="abha-search-button"
+                      type="submit"
+                      variant="primary"
+                      disabled={abhaSearchLoading}
+                      style={{
+                        height: "44px",
+                        display: "flex",
+                        alignItems: "center",
+                        gap: "0.45rem",
+                        fontWeight: 700,
+                        padding: "0 1.25rem",
+                      }}
+                    >
+                      {abhaSearchLoading ? (
+                        <>
+                          <RefreshCw size={15} className="spin-animation" /> Searching...
+                        </>
+                      ) : (
+                        <>
+                          <Search size={15} /> Search Patient
+                        </>
+                      )}
+                    </Button>
+                  </div>
+                </form>
+
+                {/* Quick Suggestion Chips for Testing */}
+                <div style={{ marginTop: "0.85rem", display: "flex", alignItems: "center", gap: "0.5rem", flexWrap: "wrap" }}>
+                  <span className="type-micro" style={{ color: "var(--color-ink-muted)", fontWeight: 600 }}>
+                    Quick Demo IDs:
+                  </span>
+                  {[
+                    { id: "91-4782-3391-6284", name: "Rahul Verma" },
+                    { id: "PT-2026-022", name: "Rahul Verma" },
+                    { id: "91-3321-0011-4432", name: "Ramesh Patil" },
+                    { id: "91-7743-2218-5561", name: "Priya Sharma" },
+                    { id: "PT-2026-025", name: "Amit Kulkarni" },
+                  ].map((chip) => (
+                    <button
+                      key={chip.id}
+                      type="button"
+                      onClick={() => {
+                        setAbhaSearchQuery(chip.id);
+                        handleSearchAbha(chip.id);
+                      }}
+                      style={{
+                        background: "var(--color-surface)",
+                        border: "1px solid var(--color-border)",
+                        borderRadius: "6px",
+                        padding: "0.25rem 0.55rem",
+                        fontSize: "0.74rem",
+                        color: "var(--color-ink-secondary)",
+                        cursor: "pointer",
+                        transition: "all 0.15s ease",
+                        display: "inline-flex",
+                        alignItems: "center",
+                        gap: "0.3rem",
+                      }}
+                    >
+                      <span style={{ fontFamily: "'JetBrains Mono', monospace", fontWeight: 700 }}>{chip.id}</span>
+                      <span style={{ color: "var(--color-ink-muted)" }}>({chip.name})</span>
+                    </button>
+                  ))}
+                </div>
+
+                {/* SEARCH RESULT: PATIENT FOUND */}
+                {abhaSearchResult && (
+                  <div
+                    className="fade-in"
+                    style={{
+                      marginTop: "1.25rem",
+                      background: "var(--color-surface)",
+                      border: "1px solid var(--color-signal-info-border)",
+                      borderLeft: "4px solid var(--color-signal-info)",
+                      borderRadius: "8px",
+                      padding: "1.25rem",
+                    }}
+                  >
+                    <div style={{ display: "flex", justifyContent: "space-between", alignItems: "flex-start", flexWrap: "wrap", gap: "1rem", marginBottom: "1rem" }}>
+                      <div style={{ display: "flex", alignItems: "center", gap: "0.85rem" }}>
+                        <div
+                          style={{
+                            width: "44px",
+                            height: "44px",
+                            borderRadius: "50%",
+                            background: "rgba(59, 130, 246, 0.15)",
+                            color: "var(--color-signal-info)",
+                            display: "flex",
+                            alignItems: "center",
+                            justifyContent: "center",
+                            fontWeight: 800,
+                            fontSize: "1rem",
+                          }}
+                        >
+                          <UserCheck size={22} />
+                        </div>
+                        <div>
+                          <div style={{ display: "flex", alignItems: "center", gap: "0.5rem", flexWrap: "wrap" }}>
+                            <span className="type-value" style={{ fontSize: "1.1rem", fontWeight: 800, color: "var(--color-ink)" }}>
+                              {abhaSearchResult.patientName || abhaSearchResult.name || abhaSearchResult.fullName}
+                            </span>
+                            <span
+                              style={{
+                                display: "inline-flex",
+                                alignItems: "center",
+                                gap: "0.3rem",
+                                background: "var(--color-signal-normal-bg)",
+                                color: "var(--color-signal-normal)",
+                                border: "1px solid var(--color-signal-normal-border)",
+                                borderRadius: "4px",
+                                padding: "0.15rem 0.45rem",
+                                fontSize: "0.72rem",
+                                fontWeight: 700,
+                              }}
+                            >
+                              <ShieldCheck size={12} /> Unique ABHA Verified
+                            </span>
+                          </div>
+                          <div style={{ display: "flex", alignItems: "center", gap: "0.75rem", marginTop: "0.2rem", flexWrap: "wrap" }}>
+                            <span className="type-id" style={{ color: "var(--color-signal-info)", fontWeight: 700, fontSize: "0.88rem" }}>
+                              ABHA ID: {abhaSearchResult.abhaId}
+                            </span>
+                            <span className="type-micro" style={{ color: "var(--color-ink-muted)" }}>
+                              UHIS ID: {abhaSearchResult.uhisId || abhaSearchResult.patientId || "—"}
+                            </span>
+                            <span className="type-micro" style={{ color: "var(--color-ink-secondary)" }}>
+                              {abhaSearchResult.age}Y · {abhaSearchResult.gender} · Blood: <strong>{abhaSearchResult.bloodGroup || "B+"}</strong>
+                            </span>
+                          </div>
+                        </div>
+                      </div>
+
+                      <div style={{ display: "flex", gap: "0.6rem", flexWrap: "wrap" }}>
+                        <Button
+                          variant="secondary"
+                          size="sm"
+                          onClick={() => handleAddToQueue(abhaSearchResult)}
+                          style={{ fontWeight: 600 }}
+                        >
+                          + ADD TO QUEUE
+                        </Button>
+                        <Button
+                          variant="primary"
+                          size="sm"
+                          onClick={() => handleSelectSearchedPatient(abhaSearchResult)}
+                          style={{ fontWeight: 700, display: "flex", alignItems: "center", gap: "0.4rem" }}
+                        >
+                          SELECT PATIENT & OPEN CONSULTATION →
+                        </Button>
+                      </div>
+                    </div>
+
+                    {/* Patient Information Grid */}
+                    <div
+                      style={{
+                        display: "grid",
+                        gridTemplateColumns: "repeat(auto-fit, minmax(180px, 1fr))",
+                        gap: "0.75rem",
+                        background: "var(--color-panel)",
+                        padding: "0.85rem 1rem",
+                        borderRadius: "6px",
+                        border: "1px solid var(--color-border)",
+                        fontSize: "0.82rem",
+                      }}
+                    >
+                      <div>
+                        <span style={{ color: "var(--color-ink-muted)", display: "block", fontSize: "0.7rem", textTransform: "uppercase", fontWeight: 600 }}>Patient Name</span>
+                        <span style={{ color: "var(--color-ink)", fontWeight: 700 }}>{abhaSearchResult.patientName || abhaSearchResult.fullName}</span>
+                      </div>
+                      <div>
+                        <span style={{ color: "var(--color-ink-muted)", display: "block", fontSize: "0.7rem", textTransform: "uppercase", fontWeight: 600 }}>ABHA ID</span>
+                        <span style={{ color: "var(--color-signal-info)", fontWeight: 700, fontFamily: "'JetBrains Mono', monospace" }}>{abhaSearchResult.abhaId}</span>
+                      </div>
+                      <div>
+                        <span style={{ color: "var(--color-ink-muted)", display: "block", fontSize: "0.7rem", textTransform: "uppercase", fontWeight: 600 }}>UHIS ID</span>
+                        <span style={{ color: "var(--color-ink)", fontWeight: 600 }}>{abhaSearchResult.uhisId || abhaSearchResult.patientId || "—"}</span>
+                      </div>
+                      <div>
+                        <span style={{ color: "var(--color-ink-muted)", display: "block", fontSize: "0.7rem", textTransform: "uppercase", fontWeight: 600 }}>Age / Gender</span>
+                        <span style={{ color: "var(--color-ink)", fontWeight: 600 }}>{abhaSearchResult.age} Yrs · {abhaSearchResult.gender}</span>
+                      </div>
+                      <div>
+                        <span style={{ color: "var(--color-ink-muted)", display: "block", fontSize: "0.7rem", textTransform: "uppercase", fontWeight: 600 }}>Height / Weight</span>
+                        <span style={{ color: "var(--color-ink)", fontWeight: 600 }}>{abhaSearchResult.height || "170 cm"} / {abhaSearchResult.weight || "65 kg"}</span>
+                      </div>
+                      <div>
+                        <span style={{ color: "var(--color-ink-muted)", display: "block", fontSize: "0.7rem", textTransform: "uppercase", fontWeight: 600 }}>Blood Group</span>
+                        <span style={{ color: "var(--color-signal-critical)", fontWeight: 700 }}>{abhaSearchResult.bloodGroup || "O+"}</span>
+                      </div>
+                      <div>
+                        <span style={{ color: "var(--color-ink-muted)", display: "block", fontSize: "0.7rem", textTransform: "uppercase", fontWeight: 600 }}>Emergency Contact</span>
+                        <span style={{ color: "var(--color-ink)", fontWeight: 600 }}>{abhaSearchResult.emergencyContact || "Contact on file"}</span>
+                      </div>
+                      <div>
+                        <span style={{ color: "var(--color-ink-muted)", display: "block", fontSize: "0.7rem", textTransform: "uppercase", fontWeight: 600 }}>Phone / Email</span>
+                        <span style={{ color: "var(--color-ink)", fontWeight: 600 }}>{abhaSearchResult.phone || abhaSearchResult.phoneNumber || abhaSearchResult.email || "On record"}</span>
+                      </div>
+                      <div>
+                        <span style={{ color: "var(--color-ink-muted)", display: "block", fontSize: "0.7rem", textTransform: "uppercase", fontWeight: 600 }}>Address</span>
+                        <span style={{ color: "var(--color-ink)", fontWeight: 600 }}>{abhaSearchResult.address || "New Delhi, India"}</span>
+                      </div>
+                      <div>
+                        <span style={{ color: "var(--color-ink-muted)", display: "block", fontSize: "0.7rem", textTransform: "uppercase", fontWeight: 600 }}>Chief Complaint</span>
+                        <span style={{ color: "var(--color-signal-info)", fontWeight: 600 }}>{abhaSearchResult.chiefComplaint || "OPD Consultation via ABHA Search"}</span>
+                      </div>
+                    </div>
+                  </div>
+                )}
+
+                {/* SEARCH ERROR: NOT FOUND / INVALID */}
+                {abhaSearchError && (
+                  <div
+                    className="fade-in"
+                    style={{
+                      marginTop: "1.25rem",
+                      background: "var(--color-signal-critical-bg)",
+                      border: "1px solid var(--color-signal-critical-border)",
+                      borderLeft: "4px solid var(--color-signal-critical)",
+                      borderRadius: "8px",
+                      padding: "1rem 1.25rem",
+                      display: "flex",
+                      justifyContent: "space-between",
+                      alignItems: "center",
+                      gap: "1rem",
+                      flexWrap: "wrap",
+                    }}
+                  >
+                    <div style={{ display: "flex", alignItems: "center", gap: "0.75rem" }}>
+                      <AlertTriangle size={20} style={{ color: "var(--color-signal-critical)", flexShrink: 0 }} />
+                      <div>
+                        <div style={{ color: "var(--color-signal-critical)", fontWeight: 700, fontSize: "0.9rem" }}>
+                          {abhaSearchError}
+                        </div>
+                        <div className="type-micro" style={{ color: "var(--color-ink-secondary)", marginTop: "0.15rem" }}>
+                          Please verify the entered ABHA ID or register the patient if this is their first hospital visit.
+                        </div>
+                      </div>
+                    </div>
+                    <Button variant="secondary" size="sm" onClick={handleClearAbhaSearch} style={{ fontWeight: 600 }}>
+                      CLEAR
+                    </Button>
+                  </div>
+                )}
+              </div>
+            </div>
+
+            {/* 2. TODAY'S OPD PATIENT QUEUE TABLE */}
             <div className="instrument-panel" style={{ overflow: "hidden" }}>
               <div className="panel-header" style={{ display: "flex", justifyContent: "space-between", alignItems: "center" }}>
                 <div>
@@ -2007,7 +2517,7 @@ export default function DoctorDashboard() {
                 </thead>
                 <tbody>
                   {opdQueue.map((p) => {
-                    const isSelected = activePatient.token === p.token || activePatient.patientId === p.patientId;
+                    const isSelected = activePatient.token === p.token || activePatient.patientId === p.patientId || activePatient.abhaId === p.abhaId;
                     return (
                       <tr
                         key={p.token || p.id}
@@ -2030,8 +2540,8 @@ export default function DoctorDashboard() {
                           </span>
                         </td>
                         <td style={{ padding: "0.75rem 1rem" }}>
-                          <span className="type-id" style={{ color: "var(--color-signal-info)", fontWeight: 600 }}>
-                            {p.patientId || p.abhaId || "RV-2026-001"}
+                          <span className="type-id" style={{ color: "var(--color-ink)", fontWeight: 600, fontFamily: "'JetBrains Mono', monospace", fontSize: "0.85rem" }}>
+                            {p.uhisId || p.patientId || "PT-2026-001"}
                           </span>
                         </td>
                         <td style={{ padding: "0.75rem 1rem" }}>
@@ -2139,7 +2649,38 @@ export default function DoctorDashboard() {
                     action={<span className="type-value" style={{ color: "var(--color-ink)", fontSize: "1.5rem", fontWeight: 800 }}>#{activePatient.token}</span>}
                   >
                     <DataRow label="PATIENT NAME" value={selectedPatientData?.patient?.fullName || activePatient.patientName} />
-                    <DataRow label="UHIS ID" value={<span className="type-id" style={{ color: "var(--color-signal-info)", fontWeight: 700 }}>{selectedPatientData?.patient?.uhisId || selectedPatientData?.patient?.abhaId || activePatient.patientId || activePatient.abhaId}</span>} />
+                    <DataRow
+                      label="ABHA ID"
+                      value={
+                        <span
+                          className="type-id"
+                          style={{
+                            color: "var(--color-signal-info)",
+                            fontWeight: 700,
+                            fontFamily: "'JetBrains Mono', 'Courier New', monospace",
+                            letterSpacing: "0.04em",
+                          }}
+                        >
+                          {selectedPatientData?.patient?.abhaId || activePatient.abhaId || "—"}
+                        </span>
+                      }
+                    />
+                    <DataRow
+                      label="UHIS ID"
+                      value={
+                        <span
+                          className="type-id"
+                          style={{
+                            color: "var(--color-ink)",
+                            fontWeight: 700,
+                            fontFamily: "'JetBrains Mono', 'Courier New', monospace",
+                            letterSpacing: "0.04em",
+                          }}
+                        >
+                          {selectedPatientData?.patient?.uhisId || activePatient.uhisId || activePatient.patientId || "—"}
+                        </span>
+                      }
+                    />
                     <DataRow label="AGE / GENDER" value={`${selectedPatientData?.patient?.age || activePatient.age || "35"} Years · ${selectedPatientData?.patient?.gender || activePatient.gender || "Male"}`} />
                     <DataRow label="HEIGHT" value={selectedPatientData?.patient?.height || activePatient.height || "176 cm"} />
                     <DataRow label="BLOOD GROUP" value={<span className="status-critical">{selectedPatientData?.patient?.bloodGroup || activePatient.bloodGroup || "B+"}</span>} />

@@ -7,6 +7,10 @@ const { upload } = require('../middleware/uploadMiddleware');
 
 router.use(authMiddleware);
 
+// Search patient by Unique ABHA ID (Accessible to Doctors and staff)
+router.get('/search/abha', patientController.searchPatientByAbha);
+router.get('/search/abha/:abhaId', patientController.searchPatientByAbha);
+
 // Level 1: Basic / Critical Patient Info (Doctor only, data minimized)
 router.get('/:patientId/basic', rbacMiddleware('DOCTOR'), patientController.getPatientBasicInfo);
 

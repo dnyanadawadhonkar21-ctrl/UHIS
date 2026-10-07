@@ -16,6 +16,7 @@ const receptionistRoutes = require('./routes/receptionistRoutes');
 const aiRoutes = require('./routes/aiRoutes');
 const adminRoutes = require('./routes/adminRoutes');
 const emergencyAccessRoutes = require('./routes/emergencyAccessRoutes');
+const medicalAccessRoutes = require('./routes/medicalAccessRoutes');
 
 const path = require('path');
 
@@ -59,6 +60,7 @@ app.use('/api/v1/receptionist', receptionistRoutes);
 app.use('/api/v1/ai', aiRoutes);
 app.use('/api/v1/admin', adminRoutes);
 app.use('/api/v1/emergency-access', emergencyAccessRoutes);
+app.use('/api/v1/medical-access', medicalAccessRoutes);
 
 // 404 Route Handler
 app.use('*', (req, res) => {

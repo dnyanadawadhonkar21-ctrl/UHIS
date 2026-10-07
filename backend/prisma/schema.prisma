@@ -82,12 +82,15 @@ model Doctor {
   medicalRecords MedicalRecord[]
   diagnoses      Diagnosis[]
   emergencyAccessRequests EmergencyAccessRequest[]
+  medicalAccessRequests   MedicalAccessRequest[]
+  medicalAccessSessions   MedicalAccessSession[]
 }
 
 model Patient {
   id                 String       @id @default(uuid())
   userId             String       @unique
-  abhaId             String       @unique
+  uhisId             String       @unique  // UHIS-generated identifier, e.g. PT-2026-001
+  abhaId             String       @unique  // Government ABHA identifier, e.g. 91-4782-3391-6284
   gender             String       @default("MALE") // MALE, FEMALE, OTHER
   dateOfBirth        DateTime
   bloodGroup         String?
@@ -113,6 +116,8 @@ model Patient {
   billings           Billing[]
   dispenseRecords    DispenseRecord[]
   emergencyAccessRequests EmergencyAccessRequest[]
+  medicalAccessRequests   MedicalAccessRequest[]
+  medicalAccessSessions   MedicalAccessSession[]
 }
 
 model Appointment {
@@ -304,6 +309,7 @@ model Notification {
   title     String
   message   String
   type      String   @default("INFO")
+  data      String?
   isRead    Boolean  @default(false)
   createdAt DateTime @default(now())
 
@@ -339,4 +345,51 @@ model EmergencyAccessRequest {
 
   patient         Patient   @relation(fields: [patientId], references: [id], onDelete: Cascade)
   doctor          Doctor    @relation(fields: [doctorId], references: [id], onDelete: Cascade)
+}
+
+model MedicalAccessRequest {
+  id           String    @id @default(uuid())
+  doctorId     String
+  patientId    String
+  reason       String
+  status       String    @default("PENDING") // PENDING, APPROVED, DENIED, EXPIRED, COMPLETED
+  denialReason String?
+  requestedAt  DateTime  @default(now())
+  respondedAt  DateTime?
+  createdAt    DateTime  @default(now())
+  updatedAt    DateTime  @updatedAt
+
+  doctor       Doctor    @relation(fields: [doctorId], references: [id], onDelete: Cascade)
+  patient      Patient   @relation(fields: [patientId], references: [id], onDelete: Cascade)
+
+  otp          AccessOTP?
+  session      MedicalAccessSession?
+}
+
+model AccessOTP {
+  id              String               @id @default(uuid())
+  accessRequestId String               @unique
+  otpHash         String
+  createdAt       DateTime             @default(now())
+  expiresAt       DateTime
+  verifiedAt      DateTime?
+  attempts        Int                  @default(0)
+  status          String               @default("ACTIVE") // ACTIVE, USED, EXPIRED, INVALIDATED
+
+  accessRequest   MedicalAccessRequest @relation(fields: [accessRequestId], references: [id], onDelete: Cascade)
+}
+
+model MedicalAccessSession {
+  id              String               @id @default(uuid())
+  accessRequestId String               @unique
+  doctorId        String
+  patientId       String
+  startedAt       DateTime             @default(now())
+  expiresAt       DateTime
+  status          String               @default("ACTIVE") // ACTIVE, EXPIRED, REVOKED, COMPLETED
+  createdAt       DateTime             @default(now())
+
+  accessRequest   MedicalAccessRequest @relation(fields: [accessRequestId], references: [id], onDelete: Cascade)
+  doctor          Doctor               @relation(fields: [doctorId], references: [id], onDelete: Cascade)
+  patient         Patient              @relation(fields: [patientId], references: [id], onDelete: Cascade)
 }
