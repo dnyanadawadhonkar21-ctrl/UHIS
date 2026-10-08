@@ -88,12 +88,13 @@ export const AuthProvider = ({ children }) => {
           name: u.fullName || u.name,
           fullName: u.fullName || u.name,
           role: (u.role || 'patient').toLowerCase(),
+          abhaId: u.patientProfile?.abhaId || u.abhaId,
         };
         setUser(normalized);
         localStorage.setItem('uhis_user', JSON.stringify(normalized));
       }
     } catch (error) {
-      console.error('Failed to fetch user from backend, checking local state');
+      console.warn('Failed to fetch user profile from server:', error?.message);
     } finally {
       setLoading(false);
     }
@@ -109,6 +110,7 @@ export const AuthProvider = ({ children }) => {
           name: userData.fullName || userData.name,
           fullName: userData.fullName || userData.name,
           role: (userData.role || 'patient').toLowerCase(),
+          abhaId: userData.patientProfile?.abhaId || userData.abhaId,
         };
         localStorage.setItem('uhis_token', authToken);
         localStorage.setItem('uhis_user', JSON.stringify(normalized));
@@ -118,7 +120,33 @@ export const AuthProvider = ({ children }) => {
       }
       throw new Error(response?.data?.message || 'Login failed.');
     } catch (e) {
-      // Clear any invalid tokens
+      localStorage.removeItem('uhis_token');
+      localStorage.removeItem('uhis_user');
+      setToken(null);
+      setUser(null);
+      throw e;
+    }
+  };
+
+  const register = async (registrationData) => {
+    try {
+      const response = await api.post('/auth/register', registrationData);
+      if (response && response.data && response.data.success) {
+        const { token: authToken, user: userData } = response.data;
+        const normalized = {
+          ...userData,
+          name: userData.fullName || userData.name,
+          fullName: userData.fullName || userData.name,
+          role: (userData.role || 'patient').toLowerCase(),
+        };
+        localStorage.setItem('uhis_token', authToken);
+        localStorage.setItem('uhis_user', JSON.stringify(normalized));
+        setToken(authToken);
+        setUser(normalized);
+        return normalized;
+      }
+      throw new Error(response?.data?.message || 'Registration failed.');
+    } catch (e) {
       localStorage.removeItem('uhis_token');
       localStorage.removeItem('uhis_user');
       setToken(null);
@@ -147,6 +175,7 @@ export const AuthProvider = ({ children }) => {
           name: userData.fullName || userData.name,
           fullName: userData.fullName || userData.name,
           role: (userData.role || 'patient').toLowerCase(),
+          abhaId: userData.patientProfile?.abhaId || userData.abhaId,
         };
         localStorage.setItem('uhis_token', authToken);
         localStorage.setItem('uhis_user', JSON.stringify(normalized));
@@ -171,6 +200,7 @@ export const AuthProvider = ({ children }) => {
       token,
       loading,
       login,
+      register,
       logout,
       demoLogin,
       fetchCurrentUser,

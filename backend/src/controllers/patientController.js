@@ -56,6 +56,17 @@ const getPatientProfile = async (req, res, next) => {
       return res.status(404).json({ success: false, message: 'Patient profile not found.' });
     }
 
+    // Dynamic age calculation
+    let age = 30;
+    if (patient.dateOfBirth) {
+      const birthDate = new Date(patient.dateOfBirth);
+      if (!isNaN(birthDate.getTime())) {
+        const diffMs = Date.now() - birthDate.getTime();
+        const ageDate = new Date(diffMs);
+        age = Math.abs(ageDate.getUTCFullYear() - 1970);
+      }
+    }
+
     const notifications = await prisma.notification.findMany({
       where: { userId: patient.userId },
       orderBy: { createdAt: 'desc' },
@@ -124,6 +135,110 @@ const getPatientProfile = async (req, res, next) => {
       });
     });
 
+    const visits = (patient.appointments || []).map((a) => {
+      let parsedNotes = {};
+      if (a.notes) {
+        try {
+          parsedNotes = JSON.parse(a.notes);
+        } catch (e) {
+          parsedNotes = { doctorNotes: a.notes };
+        }
+      }
+
+      const visitPrescriptions = [];
+      if (a.prescriptions && a.prescriptions.length > 0) {
+        a.prescriptions.forEach((p) => {
+          (p.items || []).forEach((item) => {
+            visitPrescriptions.push({
+              id: item.id,
+              medicineName: item.medicineName,
+              dosage: item.dosage,
+              frequency: item.frequency,
+              duration: item.durationDays ? `${item.durationDays} days` : 'As directed',
+              durationDays: item.durationDays,
+              instructions: item.instructions || 'As directed',
+            });
+          });
+        });
+      }
+
+      return {
+        id: a.id,
+        doctor: a.doctor?.user?.fullName || 'Doctor',
+        specialty: a.doctor?.specialization || 'Internal Medicine',
+        facility: a.hospital?.name || a.doctor?.hospital?.name || 'Hospital',
+        hospitalAddress: a.hospital?.address || a.doctor?.hospital?.address || 'New Delhi',
+        date: a.appointmentDate ? new Date(a.appointmentDate).toISOString().split('T')[0] : 'N/A',
+        appointmentDate: a.appointmentDate,
+        timeSlot: a.timeSlot || '10:00 AM',
+        reason: parsedNotes.chiefComplaint || a.reason || 'OPD Consultation',
+        chiefComplaint: parsedNotes.chiefComplaint || a.reason || 'OPD Consultation',
+        symptoms: Array.isArray(parsedNotes.symptoms) ? parsedNotes.symptoms : (parsedNotes.symptoms ? [parsedNotes.symptoms] : []),
+        findings: parsedNotes.findings || '',
+        diagnosis: parsedNotes.diagnosis || a.prescriptions?.[0]?.diagnosisText || 'Clinical Consultation',
+        icdCode: parsedNotes.icdCode || '',
+        severity: parsedNotes.severity || 'MODERATE',
+        vitals: parsedNotes.vitals || null,
+        testsRecommended: Array.isArray(parsedNotes.testsRecommended) ? parsedNotes.testsRecommended : (parsedNotes.testsRecommended ? [parsedNotes.testsRecommended] : []),
+        prescriptions: visitPrescriptions,
+        doctorNotes: parsedNotes.doctorNotes || a.notes || '',
+        followUp: parsedNotes.followUp || null,
+        status: (a.status || 'SCHEDULED').toLowerCase(),
+      };
+    });
+
+    const visits = (patient.appointments || []).map((a) => {
+      let parsedNotes = {};
+      if (a.notes) {
+        try {
+          parsedNotes = JSON.parse(a.notes);
+        } catch (e) {
+          parsedNotes = { doctorNotes: a.notes };
+        }
+      }
+
+      const visitPrescriptions = [];
+      if (a.prescriptions && a.prescriptions.length > 0) {
+        a.prescriptions.forEach((p) => {
+          (p.items || []).forEach((item) => {
+            visitPrescriptions.push({
+              id: item.id,
+              medicineName: item.medicineName,
+              dosage: item.dosage,
+              frequency: item.frequency,
+              duration: item.durationDays ? `${item.durationDays} days` : 'As directed',
+              durationDays: item.durationDays,
+              instructions: item.instructions || 'As directed',
+            });
+          });
+        });
+      }
+
+      return {
+        id: a.id,
+        doctor: a.doctor?.user?.fullName || 'Doctor',
+        specialty: a.doctor?.specialization || 'Internal Medicine',
+        facility: a.hospital?.name || a.doctor?.hospital?.name || 'Hospital',
+        hospitalAddress: a.hospital?.address || a.doctor?.hospital?.address || 'New Delhi',
+        date: a.appointmentDate ? new Date(a.appointmentDate).toISOString().split('T')[0] : 'N/A',
+        appointmentDate: a.appointmentDate,
+        timeSlot: a.timeSlot || '10:00 AM',
+        reason: parsedNotes.chiefComplaint || a.reason || 'OPD Consultation',
+        chiefComplaint: parsedNotes.chiefComplaint || a.reason || 'OPD Consultation',
+        symptoms: Array.isArray(parsedNotes.symptoms) ? parsedNotes.symptoms : (parsedNotes.symptoms ? [parsedNotes.symptoms] : []),
+        findings: parsedNotes.findings || '',
+        diagnosis: parsedNotes.diagnosis || a.prescriptions?.[0]?.diagnosisText || 'Clinical Consultation',
+        icdCode: parsedNotes.icdCode || '',
+        severity: parsedNotes.severity || 'MODERATE',
+        vitals: parsedNotes.vitals || null,
+        testsRecommended: Array.isArray(parsedNotes.testsRecommended) ? parsedNotes.testsRecommended : (parsedNotes.testsRecommended ? [parsedNotes.testsRecommended] : []),
+        prescriptions: visitPrescriptions,
+        doctorNotes: parsedNotes.doctorNotes || a.notes || '',
+        followUp: parsedNotes.followUp || null,
+        status: (a.status || 'SCHEDULED').toLowerCase(),
+      };
+    });
+
     // Build timeline grouped by Year for Medical History view
     const historyEvents = [];
 
@@ -179,6 +294,15 @@ const getPatientProfile = async (req, res, next) => {
       }
       historyByYear[ev.year].push(ev);
     });
+    const alerts = notifications.map(n => ({
+       id: n.id,
+       type: n.type,
+       severity: n.type === 'ALLERGY_WARNING' ? 'CRITICAL' : n.type === 'VACCINE_DUE' ? 'WARNING' : 'INFO',
+       title: n.title,
+       message: n.message,
+       action: 'View Details'
+    }));
+
 
     // Calculate age
     let age = 30;
@@ -216,6 +340,7 @@ const getPatientProfile = async (req, res, next) => {
       labReports: patient.labReports || [],
       medicalRecords: patient.medicalRecords || [],
       historyByYear,
+      alerts,
       pastSurgeries: patient.pastSurgeries ? [patient.pastSurgeries] : [],
     };
 
@@ -252,91 +377,121 @@ const getUnifiedTimeline = async (req, res, next) => {
 
     const [patient, medicalRecords, diagnoses, prescriptions, labReports, appointments] = await Promise.all([
       prisma.patient.findUnique({ where: { id: patientId }, include: { user: true } }),
-      prisma.medicalRecord.findMany({ where: { patientId }, include: { doctor: { include: { user: true } } } }),
-      prisma.diagnosis.findMany({ where: { patientId }, include: { doctor: { include: { user: true } } } }),
+      prisma.medicalRecord.findMany({
+        where: { patientId },
+        include: { doctor: { include: { user: true } } },
+        orderBy: { recordDate: 'desc' },
+      }),
+      prisma.diagnosis.findMany({
+        where: { patientId },
+        include: { doctor: { include: { user: true } } },
+        orderBy: { diagnosedDate: 'desc' },
+      }),
       prisma.prescription.findMany({
         where: { patientId },
-        include: { doctor: { include: { user: true } }, items: true },
+        include: { doctor: { include: { user: true, hospital: true } }, items: true, appointment: true },
+        orderBy: { createdAt: 'desc' },
       }),
-      prisma.labReport.findMany({ where: { patientId }, include: { laboratory: true } }),
+      prisma.labReport.findMany({
+        where: { patientId },
+        include: { laboratory: true },
+        orderBy: { sampleDate: 'desc' },
+      }),
       prisma.appointment.findMany({
         where: { patientId },
-        include: { doctor: { include: { user: true, hospital: true } } },
+        include: {
+          doctor: { include: { user: true, hospital: true } },
+          hospital: true,
+          prescriptions: { include: { items: true } },
+        },
+        orderBy: { appointmentDate: 'desc' },
       }),
     ]);
 
     // Aggregate into unified chronological events
     const events = [];
 
+    // 1. Process Completed Doctor Visits (Appointments)
+    appointments.forEach((a) => {
+      let parsedNotes = {};
+      if (a.notes) {
+        try {
+          parsedNotes = JSON.parse(a.notes);
+        } catch (e) {
+          parsedNotes = { doctorNotes: a.notes };
+        }
+      }
+
+      const visitPrescriptions = [];
+      if (a.prescriptions && a.prescriptions.length > 0) {
+        a.prescriptions.forEach((p) => {
+          (p.items || []).forEach((item) => {
+            visitPrescriptions.push({
+              id: item.id,
+              medicineName: item.medicineName,
+              dosage: item.dosage,
+              frequency: item.frequency,
+              duration: item.durationDays ? `${item.durationDays} days` : 'As directed',
+              durationDays: item.durationDays,
+              instructions: item.instructions || 'Take as instructed by physician.',
+            });
+          });
+        });
+      }
+
+      events.push({
+        id: a.id,
+        category: 'DOCTOR_VISIT',
+        type: 'VISIT',
+        date: a.appointmentDate,
+        visitDate: a.appointmentDate,
+        timeSlot: a.timeSlot || '10:00 AM',
+        doctorName: a.doctor?.user?.fullName || 'Dr. Anita Desai',
+        doctorSpecialization: a.doctor?.specialization || 'Internal Medicine',
+        doctorQualification: a.doctor?.qualification || 'MBBS, MD',
+        hospitalName: a.hospital?.name || a.doctor?.hospital?.name || 'AIIMS New Delhi',
+        hospitalAddress: a.hospital?.address || a.doctor?.hospital?.address || 'New Delhi',
+        reason: parsedNotes.chiefComplaint || a.reason || 'Clinical Consultation',
+        chiefComplaint: parsedNotes.chiefComplaint || a.reason || 'Routine Consultation',
+        symptoms: Array.isArray(parsedNotes.symptoms)
+          ? parsedNotes.symptoms
+          : parsedNotes.symptoms
+          ? [parsedNotes.symptoms]
+          : [],
+        findings: parsedNotes.findings || 'General physical examination performed. Vitals recorded within acceptable parameters.',
+        diagnosis: parsedNotes.diagnosis || a.prescriptions?.[0]?.diagnosisText || 'Clinical OPD Consultation',
+        icdCode: parsedNotes.icdCode || '',
+        severity: parsedNotes.severity || 'MODERATE',
+        vitals: parsedNotes.vitals || null,
+        testsRecommended: Array.isArray(parsedNotes.testsRecommended)
+          ? parsedNotes.testsRecommended
+          : parsedNotes.testsRecommended
+          ? [parsedNotes.testsRecommended]
+          : [],
+        prescriptions: visitPrescriptions,
+        doctorNotes: parsedNotes.doctorNotes || (typeof a.notes === 'string' && !a.notes.startsWith('{') ? a.notes : 'Continue prescribed medications and adhere to dietary guidance.'),
+        followUp: parsedNotes.followUp || null,
+        status: a.status || 'COMPLETED',
+      });
+    });
+
+    // 2. Process Uploaded Medical Records (X-Rays, Scans, Diagnostic Reports)
     medicalRecords.forEach((mr) => {
       events.push({
         id: mr.id,
         category: 'MEDICAL_RECORD',
-        type: mr.recordType,
+        type: mr.recordType || 'Medical Report',
         title: mr.title,
         description: mr.description,
-        doctorName: mr.doctor?.user?.fullName || 'General Medical Staff',
+        doctorName: mr.doctor?.user?.fullName || 'Self / Clinical Staff',
         attachmentUrl: mr.attachmentUrl,
-        date: mr.recordDate,
+        date: mr.recordDate || mr.createdAt,
+        status: 'RECORDED',
       });
     });
 
-    diagnoses.forEach((d) => {
-      events.push({
-        id: d.id,
-        category: 'DIAGNOSIS',
-        type: 'DIAGNOSIS',
-        title: `Diagnosed: ${d.conditionName} (${d.icdCode || 'ICD-10'})`,
-        description: d.clinicalNotes || `Severity: ${d.severity}`,
-        doctorName: d.doctor?.user?.fullName,
-        severity: d.severity,
-        date: d.diagnosedDate,
-      });
-    });
-
-    prescriptions.forEach((p) => {
-      events.push({
-        id: p.id,
-        category: 'PRESCRIPTION',
-        type: 'PRESCRIPTION',
-        title: `Digital Prescription #${p.id.slice(0, 8)}`,
-        description: p.diagnosisText || 'Digital Medication Advice',
-        items: p.items,
-        doctorName: p.doctor?.user?.fullName,
-        date: p.createdAt,
-      });
-    });
-
-    labReports.forEach((lr) => {
-      events.push({
-        id: lr.id,
-        category: 'LAB_REPORT',
-        type: lr.testCategory,
-        title: `${lr.testName} Report`,
-        description: lr.remarks || `Status: ${lr.status}`,
-        labName: lr.laboratory?.labName || 'Central Clinical Lab',
-        status: lr.status,
-        resultData: lr.resultData,
-        fileUrl: lr.fileUrl,
-        date: lr.sampleDate,
-      });
-    });
-
-    appointments.forEach((a) => {
-      events.push({
-        id: a.id,
-        category: 'APPOINTMENT',
-        type: 'APPOINTMENT',
-        title: `Consultation at ${a.doctor?.hospital?.name || 'Hospital'}`,
-        description: `Reason: ${a.reason || 'Routine Checkup'} | Slot: ${a.timeSlot}`,
-        doctorName: a.doctor?.user?.fullName,
-        status: a.status,
-        date: a.appointmentDate,
-      });
-    });
-
-    // Sort descending by date
-    events.sort((a, b) => new Date(b.date) - new Date(a.date));
+    // Sort descending by date (newest first)
+    events.sort((a, b) => new Date(b.date || b.visitDate) - new Date(a.date || a.visitDate));
 
     res.status(200).json({
       success: true,
@@ -622,811 +777,10 @@ const getMedicalRecordFile = async (req, res, next) => {
     next(error);
   }
 };
-
-// ============================================================================
-// LEVEL 1: Basic / Critical Patient Information (Data Minimization)
-// GET /api/v1/patients/:patientId/basic
-// ============================================================================
-const getPatientBasicInfo = async (req, res, next) => {
-  try {
-    const { patientId } = req.params;
-
-    // Strict Doctor Role Authorization
-    if (!req.user || req.user.role !== 'DOCTOR') {
-      return res.status(403).json({
-        success: false,
-        level: 1,
-        message: 'Access forbidden: Only verified doctors can access patient information.',
-      });
-    }
-
-    if (!patientId || typeof patientId !== 'string' || !patientId.trim()) {
-      return res.status(400).json({
-        success: false,
-        message: 'Patient identifier is required.',
-      });
-    }
-
-    const trimmedId = patientId.trim();
-
-    // Locate the real patient in the database (supports ABHA ID, UUID, or user fields)
-    const patient = await prisma.patient.findFirst({
-      where: {
-        OR: [
-          { abhaId: trimmedId },
-          { uhisId: trimmedId },
-          { id: trimmedId },
-          { userId: trimmedId },
-          { user: { email: trimmedId } },
-          { user: { fullName: trimmedId } },
-        ],
-      },
-      include: {
-        user: { select: { fullName: true, email: true, phoneNumber: true } },
-        diagnoses: { select: { conditionName: true, severity: true } },
-      },
-    });
-
-
-    if (!patient) {
-      return res.status(404).json({
-        success: false,
-        message: 'Patient not found in UHIS database.',
-      });
-    }
-
-    // Calculate age
-    let age = null;
-    if (patient.dateOfBirth) {
-      const birth = new Date(patient.dateOfBirth);
-      const diff = Date.now() - birth.getTime();
-      age = Math.floor(diff / (1000 * 60 * 60 * 24 * 365.25));
-    }
-
-    // Parse allergies (Critical info)
-    let allergies = [];
-    if (patient.allergies) {
-      try {
-        const parsed = JSON.parse(patient.allergies);
-        allergies = Array.isArray(parsed) ? parsed : [parsed];
-      } catch (e) {
-        allergies = [{ name: patient.allergies, severity: 'MODERATE' }];
-      }
-    }
-
-    // Extract critical/chronic conditions
-    const criticalConditions = patient.diagnoses.map((d) => ({
-      name: d.conditionName,
-      severity: d.severity || 'MODERATE',
-    }));
-
-    // Mask emergency phone for privacy
-    let maskedEmergencyPhone = patient.emergencyPhone || '';
-    if (maskedEmergencyPhone.length > 5) {
-      maskedEmergencyPhone = maskedEmergencyPhone.slice(0, 4) + ' ••• ' + maskedEmergencyPhone.slice(-2);
-    }
-
-    // Create AuditLog entry: BASIC_PATIENT_DATA_ACCESSED
-    await prisma.auditLog.create({
-      data: {
-        userId: req.user.id,
-        action: 'BASIC_PATIENT_DATA_ACCESSED',
-        resource: 'PATIENT_BASIC',
-        details: `Doctor ${req.user.fullName} accessed Level 1 basic/critical information for Patient ${patient.user?.fullName || 'Patient'} (${patient.abhaId})`,
-        ipAddress: req.ip || req.connection?.remoteAddress || '127.0.0.1',
-      },
-    });
-
-    // DATA MINIMIZATION: Return ONLY Level 1 fields. Never expose prescriptions, full EHR, or files.
-    return res.status(200).json({
-      success: true,
-      level: 1,
-      accessLevel: 'BASIC_CRITICAL_ONLY',
-      patient: {
-        id: patient.id,
-        uhisId: patient.uhisId || 'PT-2026-000',
-        abhaId: patient.abhaId,
-        fullName: patient.user?.fullName || 'Patient',
-        age: age || 24,
-        gender: patient.gender,
-        bloodGroup: patient.bloodGroup || 'B+',
-        height: patient.height || '170 cm',
-        weight: patient.weight || '65 kg',
-        allergies: allergies.map((a) => ({
-          name: a.name || a.allergen || 'Allergy',
-          severity: a.severity || 'SEVERE',
-          reaction: a.symptoms || a.reaction || 'Allergic reaction',
-          precautions: a.precautions || 'Avoid exposure',
-        })),
-        criticalConditions,
-        emergencyContact: patient.emergencyContact ? `${patient.emergencyContact} (${maskedEmergencyPhone || 'Contact on file'})` : 'Emergency contact on record',
-      },
-      fullAccessRequired: true,
-      message: 'Basic / critical patient information retrieved. Complete medical records remain protected under Level 2 security.',
-    });
-  } catch (error) {
-    next(error);
-  }
-};
-
-// ============================================================================
-// LEVEL 2: Full Patient Medical Information (Requires Patient OTP Verification)
-// GET /api/v1/patients/:patientId/full
-// ============================================================================
-const getPatientFullInfo = async (req, res, next) => {
-  try {
-    const { patientId } = req.params;
-
-    // 1. Authenticated user required
-    if (!req.user) {
-      return res.status(401).json({
-        success: false,
-        message: 'Authentication required.',
-      });
-    }
-
-    // 2. Doctor role required
-    if (req.user.role !== 'DOCTOR') {
-      return res.status(403).json({
-        success: false,
-        level: 2,
-        error: 'ACCESS_DENIED',
-        message: 'Access forbidden: Only authorized doctors can access full patient medical records.',
-      });
-    }
-
-    // 3. Find Doctor profile
-    const doctor = await prisma.doctor.findUnique({
-      where: { userId: req.user.id },
-      include: { user: true, hospital: true },
-    });
-
-    if (!doctor) {
-      return res.status(404).json({
-        success: false,
-        message: 'Doctor profile not found for this account.',
-      });
-    }
-
-    // 4. Find Patient in database
-    const trimmedId = (patientId || '').trim();
-    const patient = await prisma.patient.findFirst({
-      where: {
-        OR: [
-          { abhaId: trimmedId },
-          { id: trimmedId },
-          { userId: trimmedId },
-          { user: { email: trimmedId } },
-          { user: { fullName: trimmedId } },
-        ],
-      },
-      include: {
-        user: { select: { fullName: true, email: true, phoneNumber: true } },
-        medicalRecords: { orderBy: { recordDate: 'desc' } },
-        prescriptions: { include: { items: true, doctor: { include: { user: true } } }, orderBy: { createdAt: 'desc' } },
-        labReports: { orderBy: { createdAt: 'desc' } },
-        diagnoses: { include: { doctor: { include: { user: true, hospital: true } } } },
-      },
-    });
-
-    if (!patient) {
-      return res.status(404).json({
-        success: false,
-        message: 'Patient not found in database.',
-      });
-    }
-
-    // 5. Check if an active MedicalAccessSession exists for doctorId + patientId
-    const activeMedicalSession = await prisma.$queryRawUnsafe(
-      `SELECT * FROM "MedicalAccessSession"
-       WHERE "doctorId" = $1 AND "patientId" = $2 AND "status" = 'ACTIVE'
-       ORDER BY "createdAt" DESC LIMIT 1;`,
-      doctor.id, patient.id
-    );
-
-    let authRecord = null;
-    const now = new Date();
-
-    if (activeMedicalSession && activeMedicalSession.length > 0) {
-      const sess = activeMedicalSession[0];
-      if (!sess.expiresAt || now >= new Date(sess.expiresAt)) {
-        await prisma.$executeRawUnsafe(
-          `UPDATE "MedicalAccessSession" SET "status" = 'EXPIRED' WHERE "id" = $1;`,
-          sess.id
-        );
-        await prisma.auditLog.create({
-          data: {
-            userId: req.user.id,
-            action: 'MEDICAL_ACCESS_EXPIRED',
-            resource: 'PATIENT_FULL',
-            details: `Doctor ${doctor.user.fullName} attempted reading records on expired session ${sess.id}`,
-            ipAddress: req.ip || req.connection?.remoteAddress || '127.0.0.1',
-          },
-        });
-        return res.status(403).json({
-          success: false,
-          level: 2,
-          error: 'ACCESS_EXPIRED',
-          message: 'Medical record access has expired. Your 15-minute access window has ended.',
-        });
-      }
-      authRecord = {
-        id: sess.id,
-        accessExpiresAt: sess.expiresAt,
-        reason: 'Authorized Medical Record Access',
-      };
-    } else {
-      // Fallback: Check EmergencyAccessRequest
-      const activeAuth = await prisma.$queryRawUnsafe(
-        `SELECT * FROM "EmergencyAccessRequest"
-         WHERE "doctorId" = $1 AND "patientId" = $2 AND "status" = 'VERIFIED'
-         ORDER BY "verifiedAt" DESC LIMIT 1;`,
-        doctor.id, patient.id
-      );
-
-      const emerRecord = activeAuth && activeAuth.length > 0 ? activeAuth[0] : null;
-
-      if (!emerRecord) {
-        await prisma.auditLog.create({
-          data: {
-            userId: req.user.id,
-            action: 'FULL_ACCESS_DENIED',
-            resource: 'PATIENT_FULL',
-            details: `Doctor ${doctor.user.fullName} attempted unauthorized full medical record access for Patient ${patient.user.fullName} (${patient.abhaId}) without patient approval.`,
-            ipAddress: req.ip || req.connection?.remoteAddress || '127.0.0.1',
-          },
-        });
-
-        return res.status(403).json({
-          success: false,
-          level: 2,
-          error: 'AUTHORIZATION_REQUIRED',
-          message: 'Full medical access requires patient authorization. Please submit an access request and verify the patient OTP.',
-        });
-      }
-
-      if (!emerRecord.accessExpiresAt || now > new Date(emerRecord.accessExpiresAt)) {
-        await prisma.$executeRawUnsafe(
-          `UPDATE "EmergencyAccessRequest" SET "status" = 'EXPIRED' WHERE "id" = $1;`,
-          emerRecord.id
-        );
-
-        await prisma.auditLog.create({
-          data: {
-            userId: req.user.id,
-            action: 'EMERGENCY_ACCESS_EXPIRED',
-            resource: 'PATIENT_FULL',
-            details: `Doctor ${doctor.user.fullName} attempted reading records on expired emergency authorization ${emerRecord.id}`,
-            ipAddress: req.ip || req.connection?.remoteAddress || '127.0.0.1',
-          },
-        });
-
-        return res.status(403).json({
-          success: false,
-          level: 2,
-          error: 'ACCESS_EXPIRED',
-          message: 'Emergency access authorization has expired. Please submit a new access request.',
-        });
-      }
-
-      authRecord = emerRecord;
-    }
-
-    // Parse allergies
-    let allergies = [];
-    if (patient.allergies) {
-      try { allergies = JSON.parse(patient.allergies); } catch (e) {
-        allergies = [{ id: 'a0', name: patient.allergies, category: 'OTHER', severity: 'MILD' }];
-      }
-    }
-
-    // Parse conditions
-    const diseases = patient.diagnoses.map((d) => ({
-      id: d.id,
-      name: d.conditionName,
-      icdCode: d.icdCode,
-      diagnosedDate: d.diagnosedDate,
-      severity: d.severity,
-      status: 'ACTIVE',
-      treatingDoctor: d.doctor?.user?.fullName || 'General Physician',
-      hospital: d.doctor?.hospital?.name || 'Hospital',
-      notes: d.clinicalNotes,
-    }));
-
-    // Parse medications
-    const medications = [];
-    patient.prescriptions.forEach((p) => {
-      p.items.forEach((item) => {
-        const startDate = new Date(p.createdAt);
-        const endDate = new Date(startDate);
-        endDate.setDate(endDate.getDate() + item.durationDays);
-        medications.push({
-          id: item.id,
-          name: item.medicineName,
-          dosage: item.dosage,
-          frequency: item.frequency,
-          startDate: startDate,
-          endDate: endDate.toLocaleDateString(),
-          prescribedBy: p.doctor?.user?.fullName || 'Doctor',
-          instructions: item.instructions,
-        });
-      });
-    });
-
-    // Parse medical records & X-rays / files
-    const medicalRecords = patient.medicalRecords.map((mr) => ({
-      id: mr.id,
-      title: mr.title,
-      recordType: mr.recordType,
-      description: mr.description,
-      recordDate: mr.recordDate,
-      attachmentUrl: mr.attachmentUrl,
-    }));
-
-    const labReports = patient.labReports.map((lr) => ({
-      id: lr.id,
-      testName: lr.testName,
-      testCategory: lr.testCategory,
-      sampleDate: lr.sampleDate,
-      status: lr.status,
-      resultData: lr.resultData,
-      fileUrl: lr.fileUrl,
-      remarks: lr.remarks,
-    }));
-
-    // Create AuditLog: FULL_MEDICAL_DATA_ACCESSED
-    await prisma.auditLog.create({
-      data: {
-        userId: req.user.id,
-        action: 'FULL_MEDICAL_DATA_ACCESSED',
-        resource: 'PATIENT_FULL',
-        details: `Doctor ${doctor.user.fullName} accessed Level 2 full medical records for Patient ${patient.user.fullName} (${patient.abhaId}) under authorization ${authRecord.id}`,
-        ipAddress: req.ip || req.connection?.remoteAddress || '127.0.0.1',
-      },
-    });
-
-    // Calculate age
-    let age = null;
-    if (patient.dateOfBirth) {
-      const birth = new Date(patient.dateOfBirth);
-      const diff = Date.now() - birth.getTime();
-      age = Math.floor(diff / (1000 * 60 * 60 * 24 * 365.25));
-    }
-
-    return res.status(200).json({
-      success: true,
-      level: 2,
-      accessLevel: 'FULL_READ_ONLY_AUTHORIZED',
-      readOnly: true,
-      accessExpiresAt: authRecord.accessExpiresAt,
-      reason: authRecord.reason,
-      doctorName: doctor.user.fullName,
-      patientData: {
-        patient: {
-          id: patient.id,
-          name: patient.user?.fullName || 'Patient',
-          abhaId: patient.abhaId,
-          gender: patient.gender,
-          age: age || 24,
-          dateOfBirth: patient.dateOfBirth,
-          bloodGroup: patient.bloodGroup,
-          height: patient.height || '176 cm',
-          weight: patient.weight || '74 kg',
-          address: patient.address,
-          emergencyContact: patient.emergencyContact,
-          emergencyPhone: patient.emergencyPhone,
-          phone: patient.user?.phoneNumber,
-        },
-        allergies,
-        diseases,
-        medications,
-        medicalRecords,
-        labReports,
-      },
-    });
-  } catch (error) {
-    next(error);
-  }
-};
-
-/**
- * GET /api/v1/patients/:patientId/medical-records
- * Retrieves existing patient medical records (X-Ray, Blood Test, Prescriptions, Medical Documents).
- * Allowed for:
- * 1. PATIENT: Accessing their own medical records
- * 2. DOCTOR: ONLY when having an ACTIVE, VERIFIED Emergency Access Authorization that is not expired.
- * All other access attempts return HTTP 403 Forbidden.
- */
-const getPatientMedicalRecords = async (req, res, next) => {
-  try {
-    const rawPatientId = req.params.patientId || req.query.patientId;
-    const userRole = req.user?.role;
-
-    if (!userRole) {
-      return res.status(401).json({
-        success: false,
-        message: 'Authentication required to access medical records.',
-      });
-    }
-
-    // 1. Resolve Patient
-    let patient = null;
-    if (rawPatientId) {
-      const trimmedId = rawPatientId.trim();
-      patient = await prisma.patient.findFirst({
-        where: {
-          OR: [
-            { abhaId: trimmedId },
-            { id: trimmedId },
-            { userId: trimmedId },
-            { user: { email: trimmedId } },
-            { user: { fullName: trimmedId } },
-          ],
-        },
-        include: {
-          user: { select: { id: true, fullName: true, email: true, phoneNumber: true } },
-          medicalRecords: { orderBy: { recordDate: 'desc' } },
-          prescriptions: { include: { items: true, doctor: { include: { user: true } } }, orderBy: { createdAt: 'desc' } },
-          labReports: { orderBy: { createdAt: 'desc' } },
-          diagnoses: { include: { doctor: { include: { user: true, hospital: true } } } },
-        },
-      });
-    } else if (userRole === 'PATIENT') {
-      patient = await prisma.patient.findUnique({
-        where: { userId: req.user.id },
-        include: {
-          user: { select: { id: true, fullName: true, email: true, phoneNumber: true } },
-          medicalRecords: { orderBy: { recordDate: 'desc' } },
-          prescriptions: { include: { items: true, doctor: { include: { user: true } } }, orderBy: { createdAt: 'desc' } },
-          labReports: { orderBy: { createdAt: 'desc' } },
-          diagnoses: { include: { doctor: { include: { user: true, hospital: true } } } },
-        },
-      });
-    }
-
-    if (!patient) {
-      return res.status(404).json({
-        success: false,
-        message: 'Patient medical record not found.',
-      });
-    }
-
-    let authRecord = null;
-
-    // 2. Role-Based Authorization
-    if (userRole === 'PATIENT') {
-      if (patient.userId !== req.user.id) {
-        return res.status(403).json({
-          success: false,
-          error: 'ACCESS_DENIED',
-          message: 'Access forbidden: Patients can only access their own medical records.',
-        });
-      }
-    } else if (userRole === 'DOCTOR') {
-      const doctor = await prisma.doctor.findUnique({
-        where: { userId: req.user.id },
-        include: { user: true },
-      });
-
-      if (!doctor) {
-        return res.status(403).json({
-          success: false,
-          message: 'Doctor profile not found or inactive.',
-        });
-      }
-
-      // Check active MedicalAccessSession
-      const activeMedicalSession = await prisma.$queryRawUnsafe(
-        `SELECT * FROM "MedicalAccessSession"
-         WHERE "doctorId" = $1 AND "patientId" = $2 AND "status" = 'ACTIVE'
-         ORDER BY "createdAt" DESC LIMIT 1;`,
-        doctor.id, patient.id
-      );
-
-      const now = new Date();
-
-      if (activeMedicalSession && activeMedicalSession.length > 0) {
-        const sess = activeMedicalSession[0];
-        if (!sess.expiresAt || now >= new Date(sess.expiresAt)) {
-          await prisma.$executeRawUnsafe(
-            `UPDATE "MedicalAccessSession" SET "status" = 'EXPIRED' WHERE "id" = $1;`,
-            sess.id
-          );
-          await prisma.auditLog.create({
-            data: {
-              userId: req.user.id,
-              action: 'MEDICAL_ACCESS_EXPIRED',
-              resource: 'PATIENT_MEDICAL_RECORDS',
-              details: `Doctor ${doctor.user.fullName} attempted accessing medical records on expired session ${sess.id}`,
-              ipAddress: req.ip || req.connection?.remoteAddress || '127.0.0.1',
-            },
-          });
-          return res.status(403).json({
-            success: false,
-            error: 'ACCESS_EXPIRED',
-            message: 'Medical record access has expired. Your 15-minute access window has ended.',
-          });
-        }
-        authRecord = sess;
-      } else {
-        // Fallback: Check EmergencyAccessRequest
-        const activeAuth = await prisma.$queryRawUnsafe(
-          `SELECT * FROM "EmergencyAccessRequest"
-           WHERE "doctorId" = $1 AND "patientId" = $2 AND "status" = 'VERIFIED'
-           ORDER BY "verifiedAt" DESC LIMIT 1;`,
-          doctor.id, patient.id
-        );
-
-        authRecord = activeAuth && activeAuth.length > 0 ? activeAuth[0] : null;
-
-        if (!authRecord) {
-          await prisma.auditLog.create({
-            data: {
-              userId: req.user.id,
-              action: 'FULL_ACCESS_DENIED',
-              resource: 'PATIENT_MEDICAL_RECORDS',
-              details: `Doctor ${doctor.user.fullName} attempted unauthorized medical records access for Patient ${patient.user.fullName} (${patient.abhaId}) without verified OTP.`,
-              ipAddress: req.ip || req.connection?.remoteAddress || '127.0.0.1',
-            },
-          });
-
-          return res.status(403).json({
-            success: false,
-            error: 'AUTHORIZATION_REQUIRED',
-            message: 'Medical records access requires verified patient OTP authorization.',
-          });
-        }
-
-        if (!authRecord.accessExpiresAt || now > new Date(authRecord.accessExpiresAt)) {
-          await prisma.$executeRawUnsafe(
-            `UPDATE "EmergencyAccessRequest" SET "status" = 'EXPIRED' WHERE "id" = $1;`,
-            authRecord.id
-          );
-
-          await prisma.auditLog.create({
-            data: {
-              userId: req.user.id,
-              action: 'EMERGENCY_ACCESS_EXPIRED',
-              resource: 'PATIENT_MEDICAL_RECORDS',
-              details: `Doctor ${doctor.user.fullName} attempted accessing medical records on expired authorization ${authRecord.id}`,
-              ipAddress: req.ip || req.connection?.remoteAddress || '127.0.0.1',
-            },
-          });
-
-          return res.status(403).json({
-            success: false,
-            error: 'ACCESS_EXPIRED',
-            message: 'Emergency access authorization has expired. Please submit a new access request.',
-          });
-        }
-      }
-
-      // Audit log success
-      await prisma.auditLog.create({
-        data: {
-          userId: req.user.id,
-          action: 'FULL_MEDICAL_DATA_ACCESSED',
-          resource: 'PATIENT_MEDICAL_RECORDS',
-          details: `Doctor ${doctor.user.fullName} retrieved medical records for Patient ${patient.user.fullName} (${patient.abhaId}) under authorization ${authRecord.id}`,
-          ipAddress: req.ip || req.connection?.remoteAddress || '127.0.0.1',
-        },
-      });
-    } else {
-      return res.status(403).json({
-        success: false,
-        error: 'ACCESS_DENIED',
-        message: 'Access forbidden for this role.',
-      });
-    }
-
-    // 3. Format Medical Records
-    const medicalRecords = patient.medicalRecords.map((mr) => ({
-      id: mr.id,
-      title: mr.title,
-      recordType: mr.recordType,
-      category: mr.recordType === 'RADIOLOGY' ? 'X-Ray & Imaging' : mr.recordType === 'VACCINATION' ? 'Vaccination' : 'Medical Document',
-      description: mr.description,
-      recordDate: mr.recordDate,
-      attachmentUrl: mr.attachmentUrl,
-      fileUrl: mr.attachmentUrl,
-      canViewImage: !!mr.attachmentUrl || mr.recordType === 'RADIOLOGY',
-      canDownload: true,
-    }));
-
-    const labReports = patient.labReports.map((lr) => ({
-      id: lr.id,
-      title: lr.testName,
-      testName: lr.testName,
-      testCategory: lr.testCategory,
-      category: 'Blood & Lab Test',
-      recordType: 'LAB_REPORT',
-      sampleDate: lr.sampleDate,
-      recordDate: lr.sampleDate,
-      status: lr.status,
-      resultData: lr.resultData,
-      description: lr.resultData || lr.remarks || 'Laboratory diagnostic panel',
-      fileUrl: lr.fileUrl,
-      remarks: lr.remarks,
-      canViewRecord: true,
-      canDownload: true,
-    }));
-
-    const prescriptions = patient.prescriptions.map((p) => ({
-      id: p.id,
-      title: `Prescription: ${p.diagnosisText || 'Clinical Rx'}`,
-      category: 'Prescription',
-      recordType: 'PRESCRIPTION',
-      recordDate: p.createdAt,
-      diagnosisText: p.diagnosisText,
-      advice: p.advice,
-      prescribingDoctor: p.doctor?.user?.fullName || 'Physician',
-      items: p.items.map((i) => ({
-        id: i.id,
-        name: i.medicineName,
-        dosage: i.dosage,
-        frequency: i.frequency,
-        durationDays: i.durationDays,
-        instructions: i.instructions,
-      })),
-      description: p.items.map((i) => `${i.medicineName} (${i.dosage}, ${i.frequency})`).join('; '),
-      canViewRecord: true,
-      canDownload: true,
-    }));
-
-    // Unified list of records for the dashboard
-    const allRecords = [
-      ...medicalRecords,
-      ...labReports,
-      ...prescriptions,
-    ].sort((a, b) => new Date(b.recordDate || 0) - new Date(a.recordDate || 0));
-
-    return res.status(200).json({
-      success: true,
-      readOnly: userRole === 'DOCTOR',
-      accessLevel: userRole === 'DOCTOR' ? 'FULL_READ_ONLY_AUTHORIZED' : 'PATIENT_OWNER',
-      accessExpiresAt: authRecord ? authRecord.accessExpiresAt : null,
-      patient: {
-        id: patient.id,
-        name: patient.user?.fullName || 'Patient',
-        fullName: patient.user?.fullName || 'Patient',
-        abhaId: patient.abhaId,
-        gender: patient.gender,
-        bloodGroup: patient.bloodGroup,
-      },
-      medicalRecords,
-      labReports,
-      prescriptions,
-      records: allRecords,
-    });
-  } catch (error) {
-    next(error);
-  }
-};
-
-// ============================================================================
-// SEARCH PATIENT BY UNIQUE ABHA ID
-// GET /api/v1/patients/search/abha
-// GET /api/v1/patients/search/abha/:abhaId
-// ============================================================================
-const searchPatientByAbha = async (req, res, next) => {
-  try {
-    const rawAbhaId = req.query.abhaId || req.params.abhaId || req.query.q || req.query.query;
-
-    if (!rawAbhaId || typeof rawAbhaId !== 'string' || !rawAbhaId.trim()) {
-      return res.status(400).json({
-        success: false,
-        message: 'Please enter an ABHA ID.',
-      });
-    }
-
-    const trimmedAbhaId = rawAbhaId.trim();
-
-    // Format validation: check length and permitted characters (alphanumeric and hyphens)
-    if (trimmedAbhaId.length < 3 || trimmedAbhaId.length > 35 || !/^[A-Za-z0-9-]+$/.test(trimmedAbhaId)) {
-      return res.status(400).json({
-        success: false,
-        message: 'Invalid ABHA ID format. Please enter a valid ABHA ID (e.g., 91-4782-3391-6284).',
-      });
-    }
-
-    // Query database using unique ABHA ID
-    const patient = await prisma.patient.findUnique({
-      where: { abhaId: trimmedAbhaId },
-      include: {
-        user: { select: { fullName: true, email: true, phoneNumber: true } },
-        diagnoses: { include: { doctor: { include: { user: true, hospital: true } } }, orderBy: { diagnosedDate: 'desc' } },
-        medicalRecords: { orderBy: { recordDate: 'desc' } },
-        prescriptions: { include: { items: true, doctor: { include: { user: true } } }, orderBy: { createdAt: 'desc' } },
-        labReports: { orderBy: { createdAt: 'desc' } },
-      },
-    });
-
-    if (!patient) {
-      return res.status(404).json({
-        success: false,
-        message: 'No patient found with this ABHA ID.',
-      });
-    }
-
-    let age = 30;
-    if (patient.dateOfBirth) {
-      age = new Date().getFullYear() - new Date(patient.dateOfBirth).getFullYear();
-    }
-
-    let allergies = [];
-    if (patient.allergies) {
-      try {
-        const parsed = JSON.parse(patient.allergies);
-        allergies = Array.isArray(parsed) ? parsed : [parsed];
-      } catch (e) {
-        allergies = patient.allergies.split(',').map((a, idx) => ({ id: `alg-${idx}`, name: a.trim() }));
-      }
-    }
-
-    // Audit log search (if valid authenticated user)
-    if (req.user && req.user.id) {
-      try {
-        const userExists = await prisma.user.findUnique({ where: { id: req.user.id }, select: { id: true } });
-        if (userExists) {
-          await prisma.auditLog.create({
-            data: {
-              userId: req.user.id,
-              action: 'PATIENT_SEARCH_ABHA',
-              resource: 'PATIENT',
-              details: `Doctor/User ${req.user.fullName || req.user.email} searched patient by unique ABHA ID: ${trimmedAbhaId}`,
-              ipAddress: req.ip || req.connection?.remoteAddress || '127.0.0.1',
-            },
-          });
-        }
-      } catch (e) {}
-    }
-
-    const tokenSuffix = patient.abhaId.replace(/[^A-Za-z0-9]/g, '').slice(-3).toUpperCase() || '01';
-
-    return res.status(200).json({
-      success: true,
-      message: 'Patient retrieved successfully.',
-      patient: {
-        id: patient.id,
-        userId: patient.userId,
-        token: `T-${tokenSuffix}`,
-        patientName: patient.user?.fullName || 'Patient',
-        name: patient.user?.fullName || 'Patient',
-        fullName: patient.user?.fullName || 'Patient',
-        email: patient.user?.email,
-        phone: patient.user?.phoneNumber,
-        phoneNumber: patient.user?.phoneNumber,
-        patientId: patient.uhisId || patient.id,
-        uhisId: patient.uhisId || 'PT-2026-000',
-        abhaId: patient.abhaId,
-        age,
-        gender: patient.gender === 'MALE' ? 'Male' : patient.gender === 'FEMALE' ? 'Female' : 'Other',
-        dateOfBirth: patient.dateOfBirth,
-        bloodGroup: patient.bloodGroup || 'O+',
-        height: patient.height || '170 cm',
-        weight: patient.weight || '65 kg',
-        address: patient.address || 'Address on file',
-        emergencyContact: patient.emergencyContact || 'Contact on file',
-        emergencyPhone: patient.emergencyPhone,
-        allergies,
-        chiefComplaint: 'OPD Consultation via ABHA Search',
-        priority: 'routine',
-        status: 'waiting',
-        vitals: { bp: '120/80', pulse: '76', spo2: '98%', temp: '98.6°F' },
-        diagnosesCount: (patient.diagnoses || []).length,
-        recordsCount: (patient.medicalRecords || []).length,
-        prescriptionsCount: (patient.prescriptions || []).length,
-        labReportsCount: (patient.labReports || []).length,
-      },
-    });
-  } catch (error) {
-    next(error);
-  }
-};
-
 module.exports = {
   getPatientProfile,
   getUnifiedTimeline,
+  getPatientAiOverview,
   bookAppointment,
   cancelAppointment,
   updatePatientProfile,

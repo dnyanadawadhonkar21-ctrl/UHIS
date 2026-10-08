@@ -10,7 +10,16 @@ import PrecisionInput from "../components/ui/PrecisionInput";
 import { useAuth } from "../context/AuthContext";
 import { useToast } from "../context/ToastContext";
 import api from "../services/api";
-import { doctorQueue, patientData as defaultPatient, conditions as defaultConditions, labReports as defaultLabReports, medications as defaultMedications } from "../data/mockData";
+import { doctorQueue as initialQueue, patientData as defaultPatient, conditions as defaultConditions, labReports as defaultLabReports, medications as defaultMedications } from "../data/mockData";
+import AIPatientOverview from "../components/patient/AIPatientOverview";
+
+import PatientAccessLockModal from "../components/doctor/PatientAccessLockModal";
+import CurrentConsultationCard from "../components/doctor/CurrentConsultationCard";
+import WaitingQueueTable from "../components/doctor/WaitingQueueTable";
+import CompletedQueueSection from "../components/doctor/CompletedQueueSection";
+import ConsultationEmptyState from "../components/doctor/ConsultationEmptyState";
+import ClinicalWorkflowBanner from "../components/doctor/ClinicalWorkflowBanner";
+import ConsultationWorkspace from "../components/doctor/ConsultationWorkspace";
 
 const TABS = [
   { id: "queue", label: "OPD QUEUE" },
@@ -38,902 +47,114 @@ export default function DoctorDashboard() {
   const { user } = useAuth();
   const toast = useToast();
   const [activeTab, setActiveTab] = useState("queue");
-  const [activePatient, setActivePatient] = useState(doctorQueue[0]);
-  const [rxOpen, setRxOpen] = useState(false);
-  const [rxItems, setRxItems] = useState([{ name: "", dosage: "", frequency: "1-0-1", duration: "" }]);
-  const [clinicalNotes, setClinicalNotes] = useState("");
+  
+  // Queue state management
+  const [queue, setQueue] = useState(initialQueue);
+  const [activePatient, setActivePatient] = useState(() => {
+    return initialQueue.find((p) => p.status === "in-consultation" || p.status === "in_consultation") || null;
+  });
 
-  // ABHA ID Search State
-  const [abhaSearchQuery, setAbhaSearchQuery] = useState("");
-  const [abhaSearchResult, setAbhaSearchResult] = useState(null);
-  const [abhaSearchLoading, setAbhaSearchLoading] = useState(false);
-  const [abhaSearchError, setAbhaSearchError] = useState("");
-  const [abhaSearched, setAbhaSearched] = useState(false);
+  // Modal states
+  const [selectedPatientForModal, setSelectedPatientForModal] = useState(null);
+  const [isAccessModalOpen, setIsAccessModalOpen] = useState(false);
 
-  // Emergency Access Doctor State
-  const [emergencyUHISId, setEmergencyUHISId] = useState("patient22@uhis.org");
-  const [basicPatientInfo, setBasicPatientInfo] = useState(null);
-  const [emergencyStep, setEmergencyStep] = useState("REQUEST_FORM"); // "REQUEST_FORM" | "REQUEST_SENT" | "OTP_ENTRY" | "ACCESS_GRANTED"
-  const [showRequestModal, setShowRequestModal] = useState(false);
-  const [emergencyReasonSelect, setEmergencyReasonSelect] = useState("Emergency Treatment");
-  const [emergencyReasonCustom, setEmergencyReasonCustom] = useState("");
+  // Partition queue into active, waiting, and completed
+  const currentConsultingPatient = queue.find(
+    (p) => p.status === "in-consultation" || p.status === "in_consultation" || p.status === "access_granted"
+  );
+  
+  const waitingPatients = queue.filter(
+    (p) => p.status === "waiting" || p.status === "called" || p.status === "patient_present" || p.status === "otp_pending"
+  );
 
-  const [otpInput, setOtpInput] = useState("");
-  const [otpRemainingSeconds, setOtpRemainingSeconds] = useState(300);
-  const [accessRemainingSeconds, setAccessRemainingSeconds] = useState(900);
-  const [emergencyLoading, setEmergencyLoading] = useState(false);
-  const [activeEmergencyRequest, setActiveEmergencyRequest] = useState(null);
-  const [emergencyPatientRecords, setEmergencyPatientRecords] = useState(null);
-  const [failedAttempts, setFailedAttempts] = useState(0);
-
-  // Medical Record Modals
-  const [selectedImageModal, setSelectedImageModal] = useState(null);
-  const [selectedRecordModal, setSelectedRecordModal] = useState(null);
-  const [invertImageContrast, setInvertImageContrast] = useState(false);
-  const [imageZoom, setImageZoom] = useState(1);
-
-  // OPD Patient Queue & Patient-Specific Clinical Profile State
-  const [authorizedPatients, setAuthorizedPatients] = useState({}); // { [patientKey]: true }
-  const [opdAuthStep, setOpdAuthStep] = useState("LOCK_PROMPT"); // "LOCK_PROMPT" | "REQUEST_SENT" | "OTP_ENTRY"
-  const [opdActiveRequest, setOpdActiveRequest] = useState(null);
-  const [opdOtpInput, setOpdOtpInput] = useState("");
-  const [opdAuthLoading, setOpdAuthLoading] = useState(false);
-  const [opdAuthError, setOpdAuthError] = useState("");
-
-  const canonicalOpdQueue = [
-    {
-      id: "Q001",
-      token: "T-01",
-      patientName: "Rahul Verma",
-      email: "patient22@uhis.org",
-      patientId: "PT-2026-022",
-      uhisId: "PT-2026-022",
-      abhaId: "91-4782-3391-6284",
-      age: 26,
-      gender: "Male",
-      height: "176 cm",
-      weight: "74 kg",
-      bloodGroup: "B+",
-      emergencyContact: "Kavita Verma (Spouse) · +91 98877 66554",
-      chiefComplaint: "Cardiology follow-up & seasonal cough",
-      priority: "urgent",
-      status: "in-consultation",
-      vitals: { bp: "128/82", pulse: "84", spo2: "97%", temp: "98.6°F" },
-    },
-    {
-      id: "Q002",
-      token: "T-02",
-      patientName: "Ramesh Patil",
-      email: "patient23@uhis.org",
-      patientId: "PT-2026-023",
-      uhisId: "PT-2026-023",
-      abhaId: "91-3321-0011-4432",
-      age: 35,
-      gender: "Male",
-      height: "172 cm",
-      weight: "68 kg",
-      bloodGroup: "A+",
-      emergencyContact: "Sangeeta Patil (Spouse) · +91 98221 00000",
-      chiefComplaint: "High grade fever & chills · 2 days",
-      priority: "routine",
-      status: "waiting",
-      vitals: { bp: "118/76", pulse: "88", spo2: "98%", temp: "101.2°F" },
-    },
-    {
-      id: "Q003",
-      token: "T-03",
-      patientName: "Priya Sharma",
-      email: "patient24@uhis.org",
-      patientId: "PT-2026-024",
-      uhisId: "PT-2026-024",
-      abhaId: "91-7743-2218-5561",
-      age: 29,
-      gender: "Female",
-      height: "160 cm",
-      weight: "54 kg",
-      bloodGroup: "O+",
-      emergencyContact: "Raj Sharma (Brother) · +91 98233 44556",
-      chiefComplaint: "Throbbing unilateral migraine & photophobia",
-      priority: "routine",
-      status: "waiting",
-      vitals: { bp: "116/74", pulse: "74", spo2: "99%", temp: "98.4°F" },
-    },
-    {
-      id: "Q004",
-      token: "T-04",
-      patientName: "Amit Kulkarni",
-      email: "amit.kulkarni@uhis.org",
-      patientId: "PT-2026-025",
-      uhisId: "PT-2026-025",
-      abhaId: "91-9912-4430-1102",
-      age: 42,
-      gender: "Male",
-      height: "174 cm",
-      weight: "78 kg",
-      bloodGroup: "B+",
-      emergencyContact: "Pooja Kulkarni (Spouse) · +91 98111 22334",
-      chiefComplaint: "Essential hypertension follow-up & BP check",
-      priority: "routine",
-      status: "waiting",
-      vitals: { bp: "148/92", pulse: "80", spo2: "98%", temp: "98.6°F" },
-    },
-    {
-      id: "Q005",
-      token: "T-05",
-      patientName: "Sneha Deshmukh",
-      email: "sneha.deshmukh@uhis.org",
-      patientId: "PT-2026-026",
-      uhisId: "PT-2026-026",
-      abhaId: "91-5508-7761-0099",
-      age: 31,
-      gender: "Female",
-      height: "162 cm",
-      weight: "59 kg",
-      bloodGroup: "AB+",
-      emergencyContact: "Anand Deshmukh (Father) · +91 98444 55667",
-      chiefComplaint: "Type 2 Diabetes follow-up & HbA1c review",
-      priority: "routine",
-      status: "waiting",
-      vitals: { bp: "122/80", pulse: "76", spo2: "98%", temp: "98.6°F" },
-    },
-    {
-      id: "Q006",
-      token: "T-06",
-      patientName: "Arjun Mehta",
-      email: "arjun.mehta@uhis.org",
-      patientId: "PT-2026-027",
-      uhisId: "PT-2026-027",
-      abhaId: "91-1122-8834-6670",
-      age: 48,
-      gender: "Male",
-      height: "178 cm",
-      weight: "84 kg",
-      bloodGroup: "O+",
-      emergencyContact: "Sunita Mehta (Spouse) · +91 98555 66778",
-      chiefComplaint: "Substernal chest discomfort & exertional dyspnea",
-      priority: "urgent",
-      status: "waiting",
-      vitals: { bp: "152/96", pulse: "98", spo2: "95%", temp: "98.8°F" },
-    },
-    {
-      id: "Q007",
-      token: "T-07",
-      patientName: "Neha Joshi",
-      email: "neha.joshi@uhis.org",
-      patientId: "PT-2026-028",
-      uhisId: "PT-2026-028",
-      abhaId: "91-4490-1123-7788",
-      age: 38,
-      gender: "Female",
-      height: "165 cm",
-      weight: "63 kg",
-      bloodGroup: "A-",
-      emergencyContact: "Vikas Joshi (Spouse) · +91 98666 77889",
-      chiefComplaint: "Chronic lumbar back pain & radiculopathy",
-      priority: "routine",
-      status: "waiting",
-      vitals: { bp: "120/78", pulse: "72", spo2: "99%", temp: "98.4°F" },
-    },
-    {
-      id: "Q008",
-      token: "T-08",
-      patientName: "Karan Shah",
-      email: "karan.shah@uhis.org",
-      patientId: "PT-2026-029",
-      uhisId: "PT-2026-029",
-      abhaId: "91-8833-2211-9944",
-      age: 45,
-      gender: "Male",
-      height: "175 cm",
-      weight: "76 kg",
-      bloodGroup: "B-",
-      emergencyContact: "Rina Shah (Spouse) · +91 98777 88990",
-      chiefComplaint: "Annual routine executive health checkup",
-      priority: "routine",
-      status: "waiting",
-      vitals: { bp: "124/82", pulse: "78", spo2: "98%", temp: "98.6°F" },
-    },
-  ];
-
-  const [opdQueue, setOpdQueue] = useState(canonicalOpdQueue);
-  const [selectedPatientData, setSelectedPatientData] = useState(null);
-  const [patientLoading, setPatientLoading] = useState(false);
-  const [patientError, setPatientError] = useState(null);
-
-  // Fetch Patient-Specific Clinical Details from Backend
-  const fetchPatientDetails = async (patientIdentifier) => {
-    if (!patientIdentifier) return;
-    setPatientLoading(true);
-    setPatientError(null);
-
-    try {
-      const trimmedId = patientIdentifier.trim();
-      const res = await api.get(`/patients/profile/${encodeURIComponent(trimmedId)}`).catch(async () => {
-        return await api.get(`/patients/${encodeURIComponent(trimmedId)}/profile`).catch(() => null);
-      });
-
-      if (res && res.data && res.data.success && res.data.patientData) {
-        setSelectedPatientData(res.data.patientData);
-      } else {
-        throw new Error("Unable to load patient profile from database");
-      }
-    } catch (err) {
-      console.error("Error fetching patient details:", err);
-      setPatientError("Unable to load patient information.");
-    } finally {
-      setPatientLoading(false);
-    }
-  };
-
-  // Fetch OPD Appointments from Doctor Route
-  const fetchDoctorQueue = async () => {
-    try {
-      const res = await api.get("/doctors/appointments").catch(() => null);
-      if (res && res.data && res.data.success && res.data.appointments?.length > 0) {
-        const mapped = res.data.appointments.map((apt, idx) => ({
-          id: apt.id,
-          token: `T-0${idx + 1}`,
-          patientName: apt.patient?.user?.fullName || "Patient",
-          name: apt.patient?.user?.fullName || "Patient",
-          email: apt.patient?.user?.email,
-          patientId: apt.patient?.uhisId || apt.patient?.id,
-          uhisId: apt.patient?.uhisId,
-          abhaId: apt.patient?.abhaId,
-          age: apt.patient?.dateOfBirth ? (new Date().getFullYear() - new Date(apt.patient.dateOfBirth).getFullYear()) : 30,
-          gender: apt.patient?.gender === "MALE" ? "Male" : apt.patient?.gender === "FEMALE" ? "Female" : "Other",
-          height: apt.patient?.height || "175 cm",
-          bloodGroup: apt.patient?.bloodGroup || "B+",
-          emergencyContact: apt.patient?.emergencyContact || "Contact on file",
-          chiefComplaint: apt.reason || "General Consultation",
-          priority: apt.status === "in-consultation" ? "urgent" : "routine",
-          status: apt.status === "in-consultation" ? "in-consultation" : "waiting",
-          vitals: { bp: "124/80", pulse: "78", spo2: "98%", temp: "98.6°F" },
-        }));
-        if (mapped.length >= 6) {
-          setOpdQueue(mapped);
-        }
-      }
-    } catch (e) {
-      // Keep canonical queue
-    }
-  };
-
-  // ABHA ID Search Handlers
-  const handleSearchAbha = async (queryOverride) => {
-    const rawQuery = (queryOverride !== undefined ? queryOverride : abhaSearchQuery);
-    const query = (rawQuery || "").trim();
-
-    if (!query) {
-      setAbhaSearchError("Please enter an ABHA ID to search.");
-      setAbhaSearchResult(null);
-      setAbhaSearched(true);
-      return;
-    }
-
-    setAbhaSearchLoading(true);
-    setAbhaSearchError("");
-    setAbhaSearched(true);
-
-    try {
-      const res = await api.get(`/patients/search/abha?abhaId=${encodeURIComponent(query)}`);
-      if (res && res.data && res.data.success && res.data.patient) {
-        setAbhaSearchResult(res.data.patient);
-        setAbhaSearchError("");
-        toast.success(`Patient found: ${res.data.patient.patientName || res.data.patient.fullName}`);
-      } else {
-        setAbhaSearchResult(null);
-        setAbhaSearchError(res?.data?.message || "No patient found with this ABHA ID.");
-      }
-    } catch (err) {
-      if (err.response && err.response.data && err.response.data.message) {
-        setAbhaSearchResult(null);
-        setAbhaSearchError(err.response.data.message);
-      } else {
-        // Fallback check against local canonical queue if offline/network error
-        const localMatch = opdQueue.find(
-          (p) =>
-            (p.abhaId && p.abhaId.toLowerCase() === query.toLowerCase()) ||
-            (p.patientId && p.patientId.toLowerCase() === query.toLowerCase()) ||
-            (p.email && p.email.toLowerCase() === query.toLowerCase())
-        );
-        if (localMatch) {
-          setAbhaSearchResult(localMatch);
-          setAbhaSearchError("");
-          toast.success(`Patient found: ${localMatch.patientName || localMatch.name}`);
-        } else {
-          setAbhaSearchResult(null);
-          setAbhaSearchError("No patient found with this ABHA ID.");
-        }
-      }
-    } finally {
-      setAbhaSearchLoading(false);
-    }
-  };
-
-  const handleClearAbhaSearch = () => {
-    setAbhaSearchQuery("");
-    setAbhaSearchResult(null);
-    setAbhaSearchError("");
-    setAbhaSearched(false);
-  };
-
-  const handleSelectSearchedPatient = (patient) => {
-    if (!patient) return;
-    // Check if patient already exists in local queue
-    const exists = opdQueue.some(
-      (p) => (p.abhaId && p.abhaId === patient.abhaId) || (p.id && p.id === patient.id)
-    );
-    if (!exists) {
-      setOpdQueue((prev) => [
-        {
-          ...patient,
-          token: patient.token || `T-${String(prev.length + 1).padStart(2, "0")}`,
-          status: "in-consultation",
-        },
-        ...prev,
-      ]);
-    }
-    handleSelectPatient(patient);
-    toast.success(`Opening consultation for ${patient.patientName || patient.name || 'Patient'}...`);
-  };
-
-  const handleAddToQueue = (patient) => {
-    if (!patient) return;
-    const exists = opdQueue.some(
-      (p) => (p.abhaId && p.abhaId === patient.abhaId) || (p.id && p.id === patient.id)
-    );
-    if (exists) {
-      toast.info(`${patient.patientName || patient.name} is already present in today's OPD Queue.`);
-      return;
-    }
-    const newQueueItem = {
-      ...patient,
-      token: patient.token || `T-${String(opdQueue.length + 1).padStart(2, "0")}`,
-      status: "waiting",
-      priority: "routine",
-    };
-    setOpdQueue((prev) => [...prev, newQueueItem]);
-    toast.success(`${patient.patientName || patient.name} added to today's OPD Queue.`);
-  };
-
-  const handleSelectPatient = (patientItem) => {
-    setActivePatient(patientItem);
-    setOpdAuthStep("LOCK_PROMPT");
-    setOpdOtpInput("");
-    setOpdAuthError("");
-    const lookupId = patientItem.email || patientItem.abhaId || patientItem.patientId || patientItem.patientName || patientItem.name;
-    fetchPatientDetails(lookupId);
-    setActiveTab("consultation");
-  };
-
-  const handleRequestOpdAccess = async () => {
-    const targetId = activePatient?.email || activePatient?.patientId || activePatient?.abhaId || activePatient?.patientName;
-    if (!targetId) return;
-
-    setOpdAuthLoading(true);
-    setOpdAuthError("");
-
-    try {
-      const res = await api.post("/medical-access/request", {
-        patientId: targetId.trim(),
-        reason: "OPD Consultation & Medical Record Review",
-      }).catch((err) => {
-        const reqObj = {
-          id: "MREQ-" + Math.floor(100000 + Math.random() * 900000),
-          patientId: targetId.trim(),
-          patientName: activePatient.patientName,
-          doctorName: displayName,
-          hospitalName: hospitalName,
-          reason: "OPD Consultation & Medical Record Review",
-          status: "PENDING",
-          createdAt: new Date().toISOString(),
-        };
-        return { data: { success: true, mock: true, request: reqObj } };
-      });
-
-      if (res.data && res.data.success) {
-        // Handle case where doctor already has an active session
-        if (res.data.alreadyActive && res.data.session) {
-          const session = res.data.session;
-          toast.success(`✓ You already have an active access session for ${activePatient.patientName}!`);
-          const keys = [
-            activePatient.patientId, activePatient.abhaId, activePatient.email,
-            activePatient.patientName, session.patientId, session.patientUhisId, session.patientAbhaId
-          ];
-          setAuthorizedPatients((prev) => ({
-            ...prev,
-            ...Object.fromEntries(keys.filter(Boolean).map((k) => [k, true])),
-          }));
-          setOpdAuthStep("LOCK_PROMPT");
-          setOpdOtpInput("");
-          const fetchTarget = activePatient.email || activePatient.patientId || activePatient.abhaId;
-          fetchPatientDetails(fetchTarget);
-          return;
-        }
-
-        const reqData = res.data.request || {
-          id: "MREQ-" + Math.floor(100000 + Math.random() * 900000),
-          patientId: targetId.trim(),
-          patientName: activePatient.patientName,
-          doctorName: displayName,
-          hospitalName: hospitalName,
-          reason: "OPD Consultation & Medical Record Review",
-          status: "PENDING",
-          createdAt: new Date().toISOString(),
-        };
-
-        // Broadcast to patient portal via medical-access channel
-        localStorage.setItem("uhis_active_medical_access_request", JSON.stringify({
-          ...reqData,
-          patientName: activePatient.patientName,
-          patientEmail: activePatient.email,
-          patientId: targetId.trim(),
-        }));
-        window.dispatchEvent(new CustomEvent("uhis_medical_access_update"));
-
-        toast.success(`Access request sent to ${activePatient.patientName}'s portal! Awaiting patient approval.`);
-        setOpdActiveRequest(reqData);
-        setOpdAuthStep("REQUEST_SENT");
-        setOpdOtpInput("");
-      } else {
-        toast.error(res.data?.message || "Failed to submit access request.");
-      }
-    } catch (e) {
-      toast.error("Failed to connect to UHIS authorization service.");
-    } finally {
-      setOpdAuthLoading(false);
-    }
-  };
-
-  const handleVerifyOpdOtp = async () => {
-    if (!opdOtpInput || opdOtpInput.trim().length !== 6) {
-      setOpdAuthError("Please enter the complete 6-digit OTP.");
-      return;
-    }
-
-    setOpdAuthLoading(true);
-    setOpdAuthError("");
-
-    try {
-      const requestId = opdActiveRequest?.id || "MREQ-OPD-MOCK";
-      // Use the medical-access verify-otp endpoint (not emergency-access)
-      const res = await api.post("/medical-access/doctor/verify-otp", {
-        accessRequestId: requestId,
-        otp: opdOtpInput.trim(),
-        patientId: activePatient.email || activePatient.patientId || activePatient.abhaId,
-      }).catch((err) => {
-        if (opdOtpInput.trim().length === 6) {
-          return { data: { success: true, mock: true, requestId, message: "Access granted" } };
-        }
-        throw err;
-      });
-
-      if (res.data && res.data.success) {
-        toast.success(`✓ Access authorized for ${activePatient.patientName}! Full medical record unlocked.`);
-        const k1 = activePatient.patientId;
-        const k2 = activePatient.abhaId;
-        const k3 = activePatient.email;
-        const k4 = activePatient.patientName;
-        const k5 = selectedPatientData?.patient?.id;
-        const k6 = selectedPatientData?.patient?.abhaId;
-        const k7 = selectedPatientData?.patient?.uhisId;
-        // Also try session patient IDs if present
-        const k8 = res.data.patient?.id;
-        const k9 = res.data.patient?.uhisId;
-        const k10 = res.data.patient?.abhaId;
-        setAuthorizedPatients((prev) => ({
-          ...prev,
-          ...(k1 && { [k1]: true }),
-          ...(k2 && { [k2]: true }),
-          ...(k3 && { [k3]: true }),
-          ...(k4 && { [k4]: true }),
-          ...(k5 && { [k5]: true }),
-          ...(k6 && { [k6]: true }),
-          ...(k7 && { [k7]: true }),
-          ...(k8 && { [k8]: true }),
-          ...(k9 && { [k9]: true }),
-          ...(k10 && { [k10]: true }),
-        }));
-        setOpdAuthStep("LOCK_PROMPT");
-        setOpdOtpInput("");
-        // Clean up medical access localStorage entries
-        localStorage.removeItem("uhis_active_medical_access_request");
-        localStorage.removeItem("uhis_active_medical_otp_data");
-        const fetchTarget = activePatient.email || activePatient.patientId || activePatient.abhaId;
-        fetchPatientDetails(fetchTarget);
-      } else {
-        setOpdAuthError("❌ Invalid OTP. Please enter the OTP displayed in the patient's UHIS portal.");
-        toast.error("Invalid OTP. Medical records remain locked.");
-      }
-    } catch (e) {
-      setOpdAuthError("❌ Invalid OTP. Please enter the OTP displayed in the patient's UHIS portal.");
-      toast.error("Invalid OTP. Medical records remain locked.");
-    } finally {
-      setOpdAuthLoading(false);
-    }
-  };
-
-
-  // Check active emergency access & initial load
-  useEffect(() => {
-    let targetPatientId = "RV-2026-001";
-    if (user?.email === "doctor22@uhis.org") {
-      targetPatientId = "patient22@uhis.org";
-    } else if (user?.email === "doctor23@uhis.org") {
-      targetPatientId = "patient23@uhis.org";
-    } else if (user?.email === "doctor24@uhis.org") {
-      targetPatientId = "patient24@uhis.org";
-    }
-
-    setEmergencyUHISId(targetPatientId);
-    checkActiveEmergencySession();
-    fetchBasicPatientInfo(targetPatientId);
-    fetchDoctorQueue();
-    fetchPatientDetails(targetPatientId);
-
-    const handleSync = () => {
-      checkActiveEmergencySession();
-    };
-
-    window.addEventListener("storage", handleSync);
-    window.addEventListener("uhis_emergency_update", handleSync);
-
-    const interval = setInterval(checkActiveEmergencySession, 3000);
-    return () => {
-      clearInterval(interval);
-      window.removeEventListener("storage", handleSync);
-      window.removeEventListener("uhis_emergency_update", handleSync);
-    };
-  }, [user]);
-
-
-  const fetchBasicPatientInfo = async (patientId) => {
-    if (!patientId || !patientId.trim()) return;
-    try {
-      const res = await api.get(`/patients/${encodeURIComponent(patientId.trim())}/basic`).catch(() => null);
-      if (res && res.data && res.data.success && res.data.patient) {
-        setBasicPatientInfo(res.data.patient);
-      } else {
-        // Dynamic fallback according to identifier
-        let name = "Rahul Verma";
-        let blood = "B+";
-        let abha = "PT-2026-022";
-        if (patientId.includes("23")) {
-          name = "Ananya Deshmukh";
-          blood = "A+";
-          abha = "PT-2026-023";
-        } else if (patientId.includes("24")) {
-          name = "Vikram Mehta";
-          blood = "B+";
-          abha = "PT-2026-024";
-        } else if (patientId.includes("RV") || patientId.includes("patient@") || patientId.includes("22")) {
-          name = "Rahul Verma";
-          blood = "B+";
-          abha = "RV-2026-001";
-        }
-
-        setBasicPatientInfo({
-          id: "P-DEMO",
-          uhisId: patientId.trim(),
-          abhaId: abha,
-          fullName: name,
-          name: name,
-          age: patientId.includes("23") ? 34 : patientId.includes("24") ? 56 : 26,
-          gender: patientId.includes("23") ? "Female" : "Male",
-          bloodGroup: blood,
-          allergies: [
-            { name: patientId.includes("23") ? "Sulfa Drugs" : "Penicillin", severity: "SEVERE", reaction: "Anaphylaxis" },
-          ],
-          criticalConditions: [
-            { name: patientId.includes("23") ? "Bronchial Asthma" : "Asthma (Moderate Persistent), Type 2 Diabetes Mellitus", severity: "MODERATE" },
-          ],
-          emergencyContact: patientId.includes("23") ? "Spouse (Contact on file)" : "Kavita Verma (Spouse)",
-        });
-
-      }
-    } catch (e) {
-      // offline fallback
-    }
-  };
-
-  // OTP Countdown timer (5 min)
-  useEffect(() => {
-    let timer;
-    if (emergencyStep === "OTP_ENTRY" && otpRemainingSeconds > 0) {
-      timer = setInterval(() => {
-        setOtpRemainingSeconds((prev) => {
-          if (prev <= 1) {
-            clearInterval(timer);
-            toast.error("OTP expired. Please request emergency access again.");
-            setEmergencyStep("REQUEST_FORM");
-            return 0;
-          }
-          return prev - 1;
-        });
-      }, 1000);
-    }
-    return () => clearInterval(timer);
-  }, [emergencyStep, otpRemainingSeconds]);
-
-  // Access Granted Countdown timer (15 min)
-  useEffect(() => {
-    let timer;
-    if (emergencyStep === "ACCESS_GRANTED" && accessRemainingSeconds > 0) {
-      timer = setInterval(() => {
-        setAccessRemainingSeconds((prev) => {
-          if (prev <= 1) {
-            clearInterval(timer);
-            toast.error("Emergency access has expired.");
-            setEmergencyStep("REQUEST_FORM");
-            setEmergencyPatientRecords(null);
-            return 0;
-          }
-          return prev - 1;
-        });
-      }, 1000);
-    }
-    return () => clearInterval(timer);
-  }, [emergencyStep, accessRemainingSeconds]);
-
-  const checkActiveEmergencySession = async () => {
-    try {
-      // 1. Check API first
-      const res = await api.get("/emergency-access/active").catch(() => null);
-      if (res && res.data && res.data.success && res.data.activeRequests?.length > 0) {
-        const approvedReq = res.data.activeRequests.find((r) => r.status === "APPROVED");
-        if (approvedReq) {
-          setActiveEmergencyRequest(approvedReq);
-          if (emergencyStep === "REQUEST_SENT") {
-            setEmergencyStep("OTP_ENTRY");
-          }
-        }
-      }
-
-      // 2. Check localStorage cross-tab demo sync (Emergency)
-      const storedOtpData = localStorage.getItem("uhis_active_emergency_otp_data");
-      if (storedOtpData) {
-        const parsed = JSON.parse(storedOtpData);
-        if (parsed && parsed.expiresAt && new Date(parsed.expiresAt) > new Date()) {
-          setActiveEmergencyRequest((prev) => prev || { id: parsed.requestId, patientName: basicPatientInfo?.fullName || "Rahul Verma", patientUHISId: emergencyUHISId, reason: parsed.reason });
-          if (emergencyStep === "REQUEST_SENT") {
-            setEmergencyStep("OTP_ENTRY");
-          }
-        }
-      }
-
-      // 3. OPD Queue Permission Cross-Tab Sync: Medical Access channel
-      if (opdAuthStep === "REQUEST_SENT") {
-        // Check medical-access localStorage for patient approval
-        const storedMedReq = localStorage.getItem("uhis_active_medical_access_request");
-        if (storedMedReq) {
-          const parsedReq = JSON.parse(storedMedReq);
-          if (parsedReq && parsedReq.status === "APPROVED") {
-            setOpdActiveRequest((prev) => prev || parsedReq);
-            setOpdAuthStep("OTP_ENTRY");
-            toast.info(`✓ Patient approved access! Enter the OTP now.`);
-          }
-        }
-
-        // Also check backend for request status
-        if (opdActiveRequest?.id && opdActiveRequest.id.startsWith('MREQ-') === false) {
-          try {
-            const statusRes = await api.get(`/medical-access/doctor/status/${opdActiveRequest.id}`).catch(() => null);
-            if (statusRes && statusRes.data && statusRes.data.success && statusRes.data.request?.status === 'APPROVED') {
-              setOpdAuthStep("OTP_ENTRY");
-            }
-          } catch (e) { }
-        }
-      }
-    } catch (e) {
-      // offline / mock fallback
-    }
-  };
-
-  const handleRequestEmergencyAccess = async () => {
-    const finalReason = emergencyReasonSelect === "Other (Specify below)" ? emergencyReasonCustom : emergencyReasonSelect;
-    if (!emergencyUHISId.trim()) {
-      toast.error("Patient UHIS Email / ID is mandatory.");
-      return;
-    }
-    if (!finalReason.trim()) {
-      toast.error("Emergency reason is mandatory.");
-      return;
-    }
-
-    setEmergencyLoading(true);
-    try {
-      const res = await api.post("/emergency-access/request", {
-        patientUHISId: emergencyUHISId.trim(),
-        reason: finalReason.trim(),
-      }).catch((err) => {
-        const reqObj = {
-          id: "REQ-" + Math.floor(100000 + Math.random() * 900000),
-          patientUHISId: emergencyUHISId.trim(),
-          patientName: basicPatientInfo?.fullName || (emergencyUHISId.includes("23") ? "Ananya Deshmukh" : emergencyUHISId.includes("24") ? "Vikram Mehta" : "Rahul Verma"),
-          doctorName: displayName,
-          hospitalName: hospitalName,
-          reason: finalReason.trim(),
-          status: "PENDING",
-          createdAt: new Date().toISOString(),
-        };
-        return { data: { success: true, mock: true, request: reqObj } };
-      });
-
-      if (res.data && res.data.success) {
-        const reqData = res.data.request || {
-          id: "REQ-" + Math.floor(100000 + Math.random() * 900000),
-          patientUHISId: emergencyUHISId.trim(),
-          patientName: basicPatientInfo?.fullName || (emergencyUHISId.includes("23") ? "Ananya Deshmukh" : emergencyUHISId.includes("24") ? "Vikram Mehta" : "Rahul Verma"),
-          doctorName: displayName,
-          hospitalName: hospitalName,
-          reason: finalReason.trim(),
-          status: "PENDING",
-          createdAt: new Date().toISOString(),
-        };
-
-
-        // Broadcast to patient portal
-        localStorage.setItem("uhis_active_emergency_request", JSON.stringify(reqData));
-        window.dispatchEvent(new CustomEvent("uhis_emergency_update"));
-
-        toast.success("🚨 Emergency request sent to patient portal! Awaiting patient OTP approval.");
-        setActiveEmergencyRequest(reqData);
-        setEmergencyStep("REQUEST_SENT");
-        setShowRequestModal(false);
-        setOtpRemainingSeconds(300); // 5 minutes
-        setFailedAttempts(0);
-        setOtpInput("");
-      } else {
-        toast.error(res.data?.message || "Failed to request emergency access.");
-      }
-    } catch (e) {
-      toast.error("Failed to connect to UHIS emergency gateway.");
-    } finally {
-      setEmergencyLoading(false);
-    }
-  };
-
-  const handleVerifyOTP = async () => {
-    if (!otpInput || otpInput.trim().length !== 6) {
-      toast.error("Please enter the exact 6-digit OTP provided by the patient.");
-      return;
-    }
-
-    setEmergencyLoading(true);
-    try {
-      const requestId = activeEmergencyRequest?.id || "REQ-EMG-MOCK";
-      const res = await api.post("/emergency-access/verify", {
-        requestId,
-        otp: otpInput.trim(),
-      }).catch((err) => {
-        // Mock fallback if offline: check if demo 6-digit OTP format is entered
-        if (otpInput.trim().length === 6) {
-          return { data: { success: true, mock: true, requestId, message: "Emergency access granted", accessExpiresAt: new Date(Date.now() + 15 * 60 * 1000) } };
-        }
-        throw err;
-      });
-
-      if (res.data && res.data.success) {
-        toast.success("✓ Emergency access verified. Read-only records authorized.");
-        setEmergencyStep("ACCESS_GRANTED");
-        setAccessRemainingSeconds(900); // 15 minutes
-        fetchEmergencyRecords(res.data.requestId || requestId);
-      } else {
-        const attempts = failedAttempts + 1;
-        setFailedAttempts(attempts);
-        if (attempts >= 5) {
-          toast.error("Maximum OTP verification attempts exceeded. Request locked.");
-          setEmergencyStep("REQUEST_FORM");
-        } else {
-          toast.error(`❌ Invalid OTP. Please enter the OTP displayed in the patient's UHIS portal.`);
-        }
-      }
-    } catch (e) {
-      const attempts = failedAttempts + 1;
-      setFailedAttempts(attempts);
-      toast.error(`❌ Invalid OTP. Please enter the OTP displayed in the patient's UHIS portal.`);
-    } finally {
-      setEmergencyLoading(false);
-    }
-  };
-
-  const fetchEmergencyRecords = async (requestId) => {
-    try {
-      setEmergencyLoading(true);
-      const res = await api.get(`/emergency-access/records/${requestId}`).catch(() => null);
-      if (res && res.data && res.data.success && (res.data.data || res.data.patientData)) {
-        const pData = res.data.data || res.data.patientData;
-        setEmergencyPatientRecords(pData);
-        setEmergencyStep("ACCESS_GRANTED");
-      } else {
-        // Dynamic fallback matching target patient
-        let name = "Rahul Verma";
-        let blood = "B+";
-        let abha = "RV-2026-001";
-        let condition = "Asthma (Moderate Persistent), Type 2 Diabetes Mellitus";
-        let med = "Salbutamol 100mcg Inhaler";
-        let surgery = "Appendectomy (2019)";
-        if (emergencyUHISId.includes("23")) {
-          name = "Ananya Deshmukh";
-          blood = "A+";
-          abha = "PT-2026-023";
-          condition = "Bronchial Asthma (Moderate)";
-          med = "Budesonide 200mcg";
-          surgery = "None";
-        } else if (emergencyUHISId.includes("24")) {
-          name = "Vikram Mehta";
-          blood = "B+";
-          abha = "PT-2026-024";
-          condition = "Cervical Spondylosis";
-          med = "Pregabalin 75mg";
-          surgery = "Lumbar Discectomy (2017)";
-        }
-
-        setEmergencyPatientRecords({
-          patient: {
-            id: "P-DEMO",
-            name,
-            fullName: name,
-            abhaId: abha,
-            gender: emergencyUHISId.includes("23") ? "Female" : "Male",
-            age: emergencyUHISId.includes("23") ? 34 : emergencyUHISId.includes("24") ? 56 : 26,
-            bloodGroup: blood,
-            height: "176 cm",
-            weight: "74 kg",
-            pastSurgeries: surgery,
-            emergencyContact: emergencyUHISId.includes("23") ? "Spouse (Contact on file)" : "Kavita Verma (Spouse)",
-            emergencyPhone: emergencyUHISId.includes("23") ? "+91 98221 00000" : "+91 98877 66554",
-          },
-          diseases: [
-            { id: "d1", name: condition, icdCode: "J45.40", severity: "MODERATE", status: "ACTIVE", treatingDoctor: displayName, hospital: hospitalName },
-          ],
-          medications: [
-            { id: "m1", name: med, dosage: "1 tab", frequency: "Daily", startDate: "2024-01-10", endDate: "Ongoing", prescribedBy: displayName },
-          ],
-          labReports: [
-            { id: "l1", testName: "Complete Blood Count & HbA1c Panel", testCategory: "HEMATOLOGY", sampleDate: "2024-02-18", status: "COMPLETED", resultData: "Hb: 14.2 g/dL | Fasting Glucose: 124 mg/dL | HbA1c: 6.8%", remarks: "Glycemic control stable." },
-          ],
-          medicalRecords: [
-            { id: "mr1", title: "Chest X-Ray PA View (Digital Radiography)", recordType: "RADIOLOGY", description: "Lungs are clear with no focal consolidation, pneumothorax, or pleural effusion.", recordDate: "2024-02-20", attachmentUrl: "/uploads/chest-xray-sample.jpg" },
-            { id: "mr2", title: "Pulmonary Specialist Consultation Note", recordType: "CONSULTATION", description: "Comprehensive respiratory assessment. Read-only record authorized.", recordDate: "2024-01-10" },
-          ],
-          allergies: [
-            { name: emergencyUHISId.includes("23") ? "Sulfa Drugs" : "Penicillin", severity: "SEVERE", symptoms: "Anaphylaxis" },
-          ],
-        });
-
-        setEmergencyStep("ACCESS_GRANTED");
-      }
-    } catch (e) {
-      toast.error("Failed to load patient medical records.");
-    } finally {
-      setEmergencyLoading(false);
-    }
-  };
-
-
-
-  const formatTimer = (seconds) => {
-    const m = Math.floor(seconds / 60).toString().padStart(2, "0");
-    const s = (seconds % 60).toString().padStart(2, "0");
-    return `${m}:${s}`;
-  };
-
-  const addRxItem = () =>
-    setRxItems((prev) => [...prev, { name: "", dosage: "", frequency: "1-0-1", duration: "" }]);
-
-  const removeRxItem = (i) =>
-    setRxItems((prev) => prev.filter((_, idx) => idx !== i));
+  const completedPatients = queue.filter((p) => p.status === "completed");
 
   const stats = {
-    total: opdQueue.length,
-    waiting: opdQueue.filter((p) => p.status === "waiting").length,
-    inConsultation: opdQueue.filter((p) => p.status === "in-consultation" || p.status === "in_consultation").length,
-    completed: opdQueue.filter((p) => p.status === "completed").length,
+    total: queue.length,
+    waiting: waitingPatients.length,
+    inConsultation: currentConsultingPatient ? 1 : 0,
+    completed: completedPatients.length,
   };
 
   const displayName = user?.name || user?.fullName || "Dr. Anita Desai";
   const doctorSpecialty = user?.specialty || user?.specialization || "Internal Medicine";
+
+  // Workflow Action Handlers
+  const handleOpenPatientModal = (patient) => {
+    setSelectedPatientForModal(patient);
+    setIsAccessModalOpen(true);
+  };
+
+  const handleCallPatient = (patient) => {
+    setQueue((prev) =>
+      prev.map((p) => (p.token === patient.token ? { ...p, status: "called" } : p))
+    );
+    setSelectedPatientForModal((prev) => (prev && prev.token === patient.token ? { ...prev, status: "called" } : prev));
+    toast.info(`Calling Token ${patient.token} (${patient.patientName || patient.name}) to Chamber 03.`);
+  };
+
+  const handleMarkPresent = (patient) => {
+    setQueue((prev) =>
+      prev.map((p) => (p.token === patient.token ? { ...p, status: "patient_present" } : p))
+    );
+    setSelectedPatientForModal((prev) => (prev && prev.token === patient.token ? { ...prev, status: "patient_present" } : prev));
+    toast.success(`Token ${patient.token} is present in chamber. Ready for consent authorization.`);
+  };
+
+  const handleRequestOtp = (patient) => {
+    setQueue((prev) =>
+      prev.map((p) => (p.token === patient.token ? { ...p, status: "otp_pending" } : p))
+    );
+    setSelectedPatientForModal((prev) => (prev && prev.token === patient.token ? { ...prev, status: "otp_pending" } : prev));
+    toast.info(`ABDM Consent OTP sent to patient mobile. Demo code: 847291`);
+  };
+
+  const handleVerifyOtp = (patient, otp) => {
+    if (otp === "847291" || otp.length === 6) {
+      setQueue((prev) =>
+        prev.map((p) => {
+          if (p.token === patient.token) {
+            return { ...p, status: "in-consultation" };
+          }
+          if (p.status === "in-consultation") {
+            return { ...p, status: "completed" };
+          }
+          return p;
+        })
+      );
+      
+      const updated = { ...patient, status: "in-consultation" };
+      setActivePatient(updated);
+      setSelectedPatientForModal(updated);
+      toast.success(`Consent verified! Temporary 15-minute EHR access granted for ${patient.patientName || patient.name}.`);
+      return true;
+    } else {
+      return false;
+    }
+  };
+
+  const handleOpenConsultation = (patient) => {
+    setActivePatient(patient);
+    setIsAccessModalOpen(false);
+    setActiveTab("consultation");
+  };
+
+  const handleCompleteConsultation = (patient) => {
+    const targetPatient = patient || activePatient;
+    if (!targetPatient) return;
+
+    setQueue((prev) =>
+      prev.map((p) => (p.token === targetPatient.token ? { ...p, status: "completed" } : p))
+    );
+
+    if (activePatient?.token === targetPatient.token) {
+      setActivePatient(null);
+    }
+    
+    setIsAccessModalOpen(false);
+    toast.success(`Consultation completed for ${targetPatient.patientName || targetPatient.name}. Session closed.`);
+    setActiveTab("queue");
+  };
   const hospitalName = user?.hospitalName || "AIIMS New Delhi — Central Facility";
 
   return (
@@ -2492,7 +1713,7 @@ export default function DoctorDashboard() {
                   <div className="type-heading">OPD Patient Queue</div>
                 </div>
                 <div className="type-micro" style={{ color: "var(--color-ink-secondary)" }}>
-                  {displayName} · {doctorSpecialty}
+                  Real-time clinical session queue and access authorization controller
                 </div>
               </div>
               <table style={{ width: "100%", borderCollapse: "collapse" }}>
@@ -2587,770 +1808,160 @@ export default function DoctorDashboard() {
                 </tbody>
               </table>
             </div>
+
+            {/* Workflow Protocol Banner */}
+            <ClinicalWorkflowBanner />
+
+            {/* Section B: Current Consultation */}
+            <CurrentConsultationCard
+              activePatient={currentConsultingPatient}
+              onOpenConsultation={(patient) => {
+                setActivePatient(patient);
+                setActiveTab("consultation");
+              }}
+              onCompleteConsultation={handleCompleteConsultation}
+            />
+
+            {/* Section C: Waiting Queue */}
+            <WaitingQueueTable
+              patients={waitingPatients}
+              onSelectPatient={handleOpenPatientModal}
+              onCallPatient={handleCallPatient}
+            />
+
+            {/* Section 7: Completed Patients */}
+            <CompletedQueueSection completedPatients={completedPatients} />
           </div>
         )}
 
-        {/* CONSULTATION TAB: PATIENT PROFILE & MEDICAL HISTORY */}
+        {/* TAB 2: CONSULTATION WORKSPACE + PRESCRIPTION COMPOSER: PATIENT PROFILE & MEDICAL HISTORY */}
         {activeTab === "consultation" && (
-          <div className="fade-in">
-            {/* Top Navigation Bar: Back to OPD Queue */}
-            <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: "1.25rem" }}>
-              <Button
-                variant="secondary"
-                size="sm"
-                onClick={() => setActiveTab("queue")}
-                style={{ display: "flex", alignItems: "center", gap: "0.4rem", fontWeight: 700 }}
-              >
-                ← BACK TO OPD QUEUE
-              </Button>
-              <div className="type-micro" style={{ color: "var(--color-ink-secondary)" }}>
-                Selected Patient: <strong>{activePatient.patientName}</strong> ({activePatient.patientId || activePatient.abhaId})
-              </div>
-            </div>
-
-            {/* Loading State */}
-            {patientLoading && (
-              <div style={{ padding: "3rem 2rem", textAlign: "center", background: "var(--color-panel)", borderRadius: "10px", border: "1px solid var(--color-border)", marginBottom: "1.5rem" }}>
-                <RefreshCw size={28} className="spin-animation" style={{ color: "var(--color-accent-primary)", marginBottom: "0.75rem", display: "inline-block" }} />
-                <div className="type-heading" style={{ fontSize: "1.15rem", color: "var(--color-ink)" }}>
-                  Loading patient information...
-                </div>
-                <div className="type-micro" style={{ color: "var(--color-ink-secondary)", marginTop: "0.25rem" }}>
-                  Fetching clinical EHR records and unified medical history from UHIS database...
-                </div>
-              </div>
-            )}
-
-            {/* Error State */}
-            {patientError && !selectedPatientData && !patientLoading && (
-              <div style={{ padding: "2.5rem 2rem", textAlign: "center", background: "var(--color-signal-critical-bg)", borderRadius: "10px", border: "1px solid var(--color-signal-critical-border)", marginBottom: "1.5rem" }}>
-                <AlertTriangle size={32} style={{ color: "var(--color-signal-critical)", marginBottom: "0.75rem", display: "inline-block" }} />
-                <div className="type-heading" style={{ color: "var(--color-signal-critical)", fontSize: "1.15rem" }}>
-                  Unable to load patient information.
-                </div>
-                <div className="type-micro" style={{ color: "var(--color-ink-secondary)", marginTop: "0.25rem", marginBottom: "1rem" }}>
-                  The requested patient record could not be retrieved from the server.
-                </div>
-                <Button size="sm" onClick={() => fetchPatientDetails(activePatient.patientId || activePatient.abhaId || activePatient.patientName)}>
-                  RETRY
-                </Button>
-              </div>
-            )}
-
-            {/* Loaded Patient Profile & Clinical Workflow */}
-            {!patientLoading && (
-              <div style={{ display: "flex", flexDirection: "column", gap: "1.5rem" }}>
-                {/* 1. ALWAYS-VISIBLE BASIC PATIENT INFORMATION */}
-                <div style={{ display: "grid", gridTemplateColumns: "1fr", gap: "1.25rem" }}>
-                  <InstrumentPanel
-                    title={selectedPatientData?.patient?.fullName || activePatient.patientName}
-                    subtitle="PATIENT INFORMATION"
-                    channel="info"
-                    action={<span className="type-value" style={{ color: "var(--color-ink)", fontSize: "1.5rem", fontWeight: 800 }}>#{activePatient.token}</span>}
-                  >
-                    <DataRow label="PATIENT NAME" value={selectedPatientData?.patient?.fullName || activePatient.patientName} />
-                    <DataRow
-                      label="ABHA ID"
-                      value={
-                        <span
-                          className="type-id"
-                          style={{
-                            color: "var(--color-signal-info)",
-                            fontWeight: 700,
-                            fontFamily: "'JetBrains Mono', 'Courier New', monospace",
-                            letterSpacing: "0.04em",
-                          }}
-                        >
-                          {selectedPatientData?.patient?.abhaId || activePatient.abhaId || "—"}
-                        </span>
-                      }
-                    />
-                    <DataRow
-                      label="UHIS ID"
-                      value={
-                        <span
-                          className="type-id"
-                          style={{
-                            color: "var(--color-ink)",
-                            fontWeight: 700,
-                            fontFamily: "'JetBrains Mono', 'Courier New', monospace",
-                            letterSpacing: "0.04em",
-                          }}
-                        >
-                          {selectedPatientData?.patient?.uhisId || activePatient.uhisId || activePatient.patientId || "—"}
-                        </span>
-                      }
-                    />
-                    <DataRow label="AGE / GENDER" value={`${selectedPatientData?.patient?.age || activePatient.age || "35"} Years · ${selectedPatientData?.patient?.gender || activePatient.gender || "Male"}`} />
-                    <DataRow label="HEIGHT" value={selectedPatientData?.patient?.height || activePatient.height || "176 cm"} />
-                    <DataRow label="BLOOD GROUP" value={<span className="status-critical">{selectedPatientData?.patient?.bloodGroup || activePatient.bloodGroup || "B+"}</span>} />
-                    <DataRow label="EMERGENCY CONTACT" value={`${selectedPatientData?.patient?.emergencyContact || activePatient.emergencyContact || "Contact on file"}`} />
-                    <DataRow label="CHIEF COMPLAINT" value={activePatient.chiefComplaint || activePatient.complaint || "Routine Consultation"} />
-                  </InstrumentPanel>
-                </div>
-
-                {/* 2. CONFIDENTIAL SECTION: GATED BEHIND PATIENT OTP AUTHORIZATION */}
-                {!(
-                  authorizedPatients[activePatient.patientId] ||
-                  authorizedPatients[activePatient.abhaId] ||
-                  authorizedPatients[activePatient.email] ||
-                  authorizedPatients[activePatient.patientName] ||
-                  (selectedPatientData?.patient?.id && authorizedPatients[selectedPatientData.patient.id]) ||
-                  (selectedPatientData?.patient?.abhaId && authorizedPatients[selectedPatientData.patient.abhaId]) ||
-                  (selectedPatientData?.patient?.uhisId && authorizedPatients[selectedPatientData.patient.uhisId])
-                ) ? (
-                  <div>
-                    {/* STATE A: LOCK PROMPT */}
-                    {opdAuthStep === "LOCK_PROMPT" && (
-                      <div
-                        className="instrument-panel channel-critical fade-in"
-                        style={{
-                          background: "var(--color-panel)",
-                          border: "1px solid var(--color-signal-critical-border)",
-                          borderLeft: "5px solid var(--color-signal-critical)",
-                          borderRadius: "12px",
-                          padding: "2.75rem 2rem",
-                          textAlign: "center",
-                          boxShadow: "0 8px 30px rgba(220, 38, 38, 0.08)",
-                          marginBottom: "1rem",
-                        }}
-                      >
-                        <div
-                          style={{
-                            width: "58px",
-                            height: "58px",
-                            borderRadius: "50%",
-                            background: "rgba(220, 38, 38, 0.12)",
-                            color: "var(--color-signal-critical)",
-                            display: "flex",
-                            alignItems: "center",
-                            justifyContent: "center",
-                            margin: "0 auto 1.25rem auto",
-                          }}
-                        >
-                          <Lock size={28} />
-                        </div>
-                        <div className="type-heading" style={{ fontSize: "1.35rem", color: "var(--color-ink)", marginBottom: "0.5rem" }}>
-                          🔒 CONFIDENTIAL MEDICAL INFORMATION
-                        </div>
-                        <div className="type-body" style={{ color: "var(--color-ink-secondary)", fontSize: "0.95rem", maxWidth: "520px", margin: "0 auto 0.5rem auto", lineHeight: 1.5 }}>
-                          Medical records are protected.
-                        </div>
-                        <div className="type-body" style={{ color: "var(--color-ink-secondary)", fontSize: "0.95rem", maxWidth: "520px", margin: "0 auto 1.75rem auto", lineHeight: 1.5 }}>
-                          Patient permission is required to view the complete medical record.
-                        </div>
-                        <Button
-                          onClick={handleRequestOpdAccess}
-                          disabled={opdAuthLoading}
-                          style={{
-                            background: "var(--color-signal-critical)",
-                            borderColor: "var(--color-signal-critical)",
-                            color: "white",
-                            fontWeight: 700,
-                            padding: "0.75rem 2rem",
-                            fontSize: "0.95rem",
-                            boxShadow: "0 4px 15px rgba(220, 38, 38, 0.35)",
-                          }}
-                        >
-                          {opdAuthLoading ? "SENDING REQUEST..." : "🔐 REQUEST MEDICAL RECORD ACCESS"}
-                        </Button>
-                      </div>
-                    )}
-
-
-                    {/* STATE B: REQUEST SENT */}
-                    {opdAuthStep === "REQUEST_SENT" && (
-                      <div
-                        className="instrument-panel channel-warning fade-in"
-                        style={{
-                          background: "var(--color-panel)",
-                          border: "1px solid var(--color-signal-warning-border)",
-                          borderLeft: "5px solid var(--color-signal-warning)",
-                          borderRadius: "12px",
-                          padding: "2.5rem 2rem",
-                          textAlign: "center",
-                          boxShadow: "0 8px 30px rgba(245, 158, 11, 0.08)",
-                          marginBottom: "1rem",
-                        }}
-                      >
-                        <div
-                          style={{
-                            width: "58px",
-                            height: "58px",
-                            borderRadius: "50%",
-                            background: "rgba(245, 158, 11, 0.12)",
-                            color: "var(--color-signal-warning)",
-                            display: "flex",
-                            alignItems: "center",
-                            justifyContent: "center",
-                            margin: "0 auto 1.25rem auto",
-                          }}
-                        >
-                          <Clock size={28} className="pulse-signal" />
-                        </div>
-                        <div className="type-heading" style={{ fontSize: "1.3rem", color: "var(--color-ink)", marginBottom: "0.4rem" }}>
-                          ✓ ACCESS REQUEST SENT
-                        </div>
-                        <div className="type-body" style={{ color: "var(--color-ink-secondary)", fontSize: "0.95rem", maxWidth: "520px", margin: "0 auto 1.5rem auto" }}>
-                          Waiting for patient approval in UHIS Patient Portal (<strong>{activePatient.patientName}</strong>)...
-                        </div>
-                        <div style={{ display: "flex", justifyContent: "center", gap: "0.75rem" }}>
-                          <Button variant="secondary" onClick={() => setOpdAuthStep("LOCK_PROMPT")}>
-                            CANCEL
-                          </Button>
-                          <Button onClick={() => setOpdAuthStep("OTP_ENTRY")} style={{ fontWeight: 700 }}>
-                            ENTER OTP →
-                          </Button>
-                        </div>
-                      </div>
-                    )}
-
-                    {/* STATE C: OTP ENTRY */}
-                    {opdAuthStep === "OTP_ENTRY" && (
-                      <div
-                        className="instrument-panel channel-info fade-in"
-                        style={{
-                          background: "var(--color-panel)",
-                          border: "1px solid var(--color-signal-info-border)",
-                          borderLeft: "5px solid var(--color-signal-info)",
-                          borderRadius: "12px",
-                          padding: "2.25rem 2rem",
-                          textAlign: "center",
-                          boxShadow: "0 8px 30px rgba(59, 130, 246, 0.08)",
-                          maxWidth: "580px",
-                          margin: "0 auto 1rem auto",
-                        }}
-                      >
-                        <div className="type-heading" style={{ fontSize: "1.25rem", color: "var(--color-ink)", marginBottom: "0.3rem" }}>
-                          🔐 VERIFY MEDICAL RECORD ACCESS
-                        </div>
-                        <div className="type-body" style={{ color: "var(--color-ink-secondary)", fontSize: "0.875rem", marginBottom: "1.5rem" }}>
-                          Patient: <strong>{activePatient.patientName}</strong><br />
-                          The patient has approved access.
-                        </div>
-
-                        {opdAuthError && (
-                          <div style={{ background: "var(--color-signal-critical-bg)", border: "1px solid var(--color-signal-critical-border)", color: "var(--color-signal-critical)", padding: "0.6rem", borderRadius: "6px", fontSize: "0.85rem", fontWeight: 600, marginBottom: "1rem" }}>
-                            {opdAuthError}
-                          </div>
-                        )}
-
-                        <div style={{ marginBottom: "1.5rem" }}>
-                          <div className="type-label" style={{ color: "var(--color-ink-secondary)", marginBottom: "0.5rem" }}>
-                            ENTER THE 6-DIGIT OTP
-                          </div>
-                          <input
-                            type="text"
-                            maxLength={6}
-                            placeholder="• • • • • •"
-                            value={opdOtpInput}
-                            onChange={(e) => {
-                              const val = e.target.value.replace(/\D/g, "").slice(0, 6);
-                              setOpdOtpInput(val);
-                              setOpdAuthError("");
-                            }}
-                            style={{
-                              fontFamily: "'JetBrains Mono', monospace",
-                              fontSize: "2rem",
-                              letterSpacing: "0.3em",
-                              textAlign: "center",
-                              width: "240px",
-                              padding: "0.5rem 1rem",
-                              background: "var(--color-surface)",
-                              border: "2px solid var(--color-accent-primary)",
-                              borderRadius: "8px",
-                              color: "var(--color-ink)",
-                              outline: "none",
-                            }}
-                          />
-                        </div>
-
-                        <div style={{ display: "flex", justifyContent: "center", gap: "0.75rem" }}>
-                          <Button variant="secondary" onClick={() => setOpdAuthStep("LOCK_PROMPT")}>
-                            BACK
-                          </Button>
-                          <Button
-                            onClick={handleVerifyOpdOtp}
-                            disabled={opdAuthLoading || opdOtpInput.length !== 6}
-                            style={{
-                              background: "var(--color-signal-normal)",
-                              borderColor: "var(--color-signal-normal)",
-                              color: "white",
-                              fontWeight: 700,
-                              padding: "0.6rem 1.75rem",
-                            }}
-                          >
-                            {opdAuthLoading ? "VERIFYING..." : "✓ VERIFY OTP"}
-                          </Button>
-                        </div>
-                      </div>
-                    )}
-                  </div>
-                ) : (
-                  /* 3. AUTHORIZED FULL CLINICAL MEDICAL INFORMATION */
-                  <div className="fade-in" style={{ display: "flex", flexDirection: "column", gap: "1.5rem" }}>
-                    {/* Authorized Banner */}
-                    <div
-                      className="instrument-panel channel-normal"
-                      style={{
-                        background: "var(--color-signal-normal-bg)",
-                        border: "1px solid var(--color-signal-normal-border)",
-                        borderLeft: "5px solid var(--color-signal-normal)",
-                        borderRadius: "8px",
-                        padding: "0.85rem 1.25rem",
-                        display: "flex",
-                        justifyContent: "space-between",
-                        alignItems: "center",
-                      }}
-                    >
-                      <div style={{ display: "flex", alignItems: "center", gap: "0.5rem" }}>
-                        <ShieldCheck size={18} color="var(--color-signal-normal)" />
-                        <span className="type-label" style={{ color: "var(--color-signal-normal)", fontWeight: 800, fontSize: "0.9rem" }}>
-                          ✓ ACCESS AUTHORIZED — READ ONLY
-                        </span>
-                      </div>
-                      <span className="type-micro" style={{ color: "var(--color-ink-secondary)" }}>
-                        Patient: {selectedPatientData?.patient?.fullName || activePatient.patientName} · Full Medical Records Unlocked
-                      </span>
-                    </div>
-
-                    {/* Allergies & Critical Conditions */}
-                    <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: "1.25rem" }}>
-                      <InstrumentPanel title="Known Allergies" subtitle="SAFETY WARNINGS" channel="critical">
-                        {selectedPatientData?.allergies && selectedPatientData.allergies.length > 0 ? (
-                          <div style={{ display: "flex", flexDirection: "column", gap: "0.4rem" }}>
-                            {selectedPatientData.allergies.map((a) => (
-                              <div key={a.id || a.name} style={{ display: "flex", justifyContent: "space-between", alignItems: "center", background: "var(--color-surface)", padding: "0.5rem 0.75rem", borderRadius: "6px" }}>
-                                <div>
-                                  <span className="type-value" style={{ color: "var(--color-signal-critical)", fontSize: "0.85rem", fontWeight: 700 }}>■ {a.name}</span>
-                                  {a.symptoms && <div className="type-micro" style={{ color: "var(--color-ink-secondary)" }}>Reaction: {a.symptoms}</div>}
-                                </div>
-                                <StatusCode status="critical" label={a.severity || "SEVERE"} />
-                              </div>
-                            ))}
-                          </div>
-                        ) : (
-                          <div className="type-micro" style={{ color: "var(--color-ink-muted)" }}>No known drug or environmental allergies recorded.</div>
-                        )}
-                      </InstrumentPanel>
-
-                      <InstrumentPanel title="Critical Conditions" subtitle="CLINICAL DIAGNOSES" channel="info">
-                        {selectedPatientData?.diseases && selectedPatientData.diseases.length > 0 ? (
-                          <div style={{ display: "flex", flexDirection: "column", gap: "0.4rem" }}>
-                            {selectedPatientData.diseases.map((d) => (
-                              <div key={d.id} style={{ display: "flex", justifyContent: "space-between", alignItems: "center", background: "var(--color-surface)", padding: "0.5rem 0.75rem", borderRadius: "6px" }}>
-                                <div>
-                                  <span className="type-value" style={{ color: "var(--color-ink)", fontSize: "0.85rem", fontWeight: 700 }}>{d.name}</span>
-                                  <span className="type-micro" style={{ color: "var(--color-ink-secondary)", marginLeft: "0.4rem" }}>{d.icdCode}</span>
-                                </div>
-                                <StatusCode status={d.severity === "SEVERE" ? "critical" : "warning"} label={d.severity || "ACTIVE"} />
-                              </div>
-                            ))}
-                          </div>
-                        ) : (
-                          <div className="type-micro" style={{ color: "var(--color-ink-muted)" }}>None reported</div>
-                        )}
-                      </InstrumentPanel>
-                    </div>
-
-                    {/* Medical History (Year-by-Year + Previous Operations) */}
-                    <InstrumentPanel title="Medical History" subtitle="CHRONOLOGICAL PATIENT EHR TIMELINE" channel="muted">
-                      {selectedPatientData?.historyByYear && Object.keys(selectedPatientData.historyByYear).length > 0 ? (
-                        <div style={{ display: "flex", flexDirection: "column", gap: "1.25rem" }}>
-                          {Object.keys(selectedPatientData.historyByYear)
-                            .sort()
-                            .reverse()
-                            .map((yr) => (
-                              <div key={yr} style={{ borderLeft: "2px solid var(--color-accent-primary)", paddingLeft: "1rem" }}>
-                                <div className="type-label" style={{ color: "var(--color-accent-primary)", fontSize: "0.95rem", fontWeight: 800, marginBottom: "0.4rem" }}>
-                                  {yr}
-                                </div>
-                                <div style={{ display: "flex", flexDirection: "column", gap: "0.35rem" }}>
-                                  {selectedPatientData.historyByYear[yr].map((ev, i) => (
-                                    <div key={i} style={{ display: "flex", alignItems: "baseline", gap: "0.5rem" }}>
-                                      <span style={{ color: "var(--color-ink-secondary)", fontSize: "0.9rem" }}>•</span>
-                                      <div>
-                                        <span className="type-value" style={{ color: "var(--color-ink)", fontSize: "0.85rem", fontWeight: 600 }}>
-                                          {ev.title}
-                                        </span>
-                                        <span className="type-micro" style={{ color: "var(--color-ink-secondary)", marginLeft: "0.5rem" }}>
-                                          ({ev.date})
-                                        </span>
-                                        {ev.detail && (
-                                          <div className="type-micro" style={{ color: "var(--color-ink-muted)", marginTop: "0.1rem" }}>
-                                            {ev.detail}
-                                          </div>
-                                        )}
-                                      </div>
-                                    </div>
-                                  ))}
-                                </div>
-                              </div>
-                            ))}
-                        </div>
-                      ) : (
-                        <div className="type-micro" style={{ color: "var(--color-ink-muted)", padding: "0.5rem 0" }}>
-                          No medical history available for this patient.
-                        </div>
-                      )}
-
-                      {/* Previous Operations */}
-                      <div style={{ marginTop: "1.25rem", paddingTop: "1rem", borderTop: "1px solid var(--color-border)" }}>
-                        <div className="type-label" style={{ color: "var(--color-ink-secondary)", marginBottom: "0.35rem" }}>
-                          PREVIOUS OPERATIONS & SURGERIES
-                        </div>
-                        <div className="type-body" style={{ color: "var(--color-ink)", fontSize: "0.85rem" }}>
-                          • {selectedPatientData?.patient?.pastSurgeries || "None"}
-                        </div>
-                      </div>
-                    </InstrumentPanel>
-
-                    {/* Current Medications */}
-                    <InstrumentPanel title="Current Medications" subtitle="ACTIVE PHARMACOTHERAPY" channel="info">
-                      {selectedPatientData?.medications && selectedPatientData.medications.length > 0 ? (
-                        <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(280px, 1fr))", gap: "0.75rem" }}>
-                          {selectedPatientData.medications.map((m) => (
-                            <div key={m.id || m.name} style={{ background: "var(--color-surface)", padding: "0.85rem 1rem", borderRadius: "8px", border: "1px solid var(--color-border)" }}>
-                              <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: "0.25rem" }}>
-                                <span className="type-value" style={{ fontWeight: 700, fontSize: "0.9rem" }}>{m.name}</span>
-                                <span className="status-critical" style={{ background: "rgba(59, 130, 246, 0.15)", color: "var(--color-signal-info)" }}>
-                                  {m.dosage}
-                                </span>
-                              </div>
-                              <div className="type-micro" style={{ color: "var(--color-ink-secondary)", marginBottom: "0.2rem" }}>
-                                Frequency: <strong>{m.frequency}</strong> · Prescribed by: {m.prescribedBy}
-                              </div>
-                              {m.instructions && (
-                                <div className="type-micro" style={{ color: "var(--color-ink)", marginTop: "0.2rem" }}>
-                                  Instructions: {m.instructions}
-                                </div>
-                              )}
-                            </div>
-                          ))}
-                        </div>
-                      ) : (
-                        <div className="type-micro" style={{ color: "var(--color-ink-muted)", padding: "0.5rem 0" }}>
-                          No active medications recorded.
-                        </div>
-                      )}
-                    </InstrumentPanel>
-
-                    {/* Medical Records Tiles (X-Ray, Blood Test, Prescription, Medical Document) */}
-                    <InstrumentPanel title="Medical Records" subtitle="AVAILABLE EHR ATTACHMENTS & DIAGNOSTICS" channel="muted">
-                      <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(220px, 1fr))", gap: "1rem" }}>
-                        {/* X-Ray */}
-                        <div style={{ background: "var(--color-surface)", padding: "1rem", borderRadius: "8px", border: "1px solid var(--color-border)", display: "flex", flexDirection: "column", justifyContent: "space-between" }}>
-                          <div>
-                            <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: "0.4rem" }}>
-                              <span style={{ background: "rgba(59, 130, 246, 0.12)", color: "var(--color-signal-info)", padding: "0.15rem 0.4rem", borderRadius: "4px", fontSize: "0.7rem", fontWeight: 700 }}>
-                                X-RAY
-                              </span>
-                              <span className="type-id" style={{ fontSize: "0.75rem", color: "var(--color-ink-muted)" }}>Radiology</span>
-                            </div>
-                            <div className="type-value" style={{ fontSize: "0.85rem", fontWeight: 700, marginBottom: "0.3rem" }}>
-                              {selectedPatientData?.medicalRecords?.find((r) => r.recordType === "RADIOLOGY")?.title || "Radiography Scan"}
-                            </div>
-                            <div className="type-micro" style={{ color: "var(--color-ink-secondary)", marginBottom: "0.75rem", lineHeight: 1.3 }}>
-                              {selectedPatientData?.medicalRecords?.find((r) => r.recordType === "RADIOLOGY")?.description || "Digital imaging on file"}
-                            </div>
-                          </div>
-                          <Button
-                            size="sm"
-                            onClick={() => {
-                              const rad = selectedPatientData?.medicalRecords?.find((r) => r.recordType === "RADIOLOGY");
-                              setSelectedImageModal({
-                                title: rad?.title || "Chest Radiography PA View",
-                                subtitle: "DIGITAL RADIOLOGY IMAGING",
-                                imageUrl: rad?.attachmentUrl || "/uploads/chest-xray-sample.jpg",
-                                date: rad?.recordDate || "2024",
-                                patientName: selectedPatientData?.patient?.fullName || activePatient.patientName,
-                                patientUHISId: selectedPatientData?.patient?.uhisId || activePatient.patientId,
-                                findings: rad?.description || "Radiological evaluation normal.",
-                              });
-                            }}
-                            style={{ width: "100%", display: "flex", alignItems: "center", justifyContent: "center", gap: "0.3rem", fontWeight: 700 }}
-                          >
-                            <ImageIcon size={13} /> VIEW IMAGE
-                          </Button>
-                        </div>
-
-                        {/* Blood Test */}
-                        <div style={{ background: "var(--color-surface)", padding: "1rem", borderRadius: "8px", border: "1px solid var(--color-border)", display: "flex", flexDirection: "column", justifyContent: "space-between" }}>
-                          <div>
-                            <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: "0.4rem" }}>
-                              <span style={{ background: "rgba(16, 185, 129, 0.12)", color: "var(--color-signal-normal)", padding: "0.15rem 0.4rem", borderRadius: "4px", fontSize: "0.7rem", fontWeight: 700 }}>
-                                BLOOD TEST
-                              </span>
-                              <span className="type-id" style={{ fontSize: "0.75rem", color: "var(--color-ink-muted)" }}>Laboratory</span>
-                            </div>
-                            <div className="type-value" style={{ fontSize: "0.85rem", fontWeight: 700, marginBottom: "0.3rem" }}>
-                              {selectedPatientData?.labReports?.[0]?.testName || "Diagnostic Lab Panel"}
-                            </div>
-                            <div className="type-micro" style={{ color: "var(--color-ink-secondary)", marginBottom: "0.75rem", lineHeight: 1.3 }}>
-                              {selectedPatientData?.labReports?.[0]?.resultData || "Evaluated by central pathology"}
-                            </div>
-                          </div>
-                          <Button
-                            size="sm"
-                            onClick={() => setSelectedRecordModal({
-                              type: "LAB_REPORT",
-                              title: selectedPatientData?.labReports?.[0]?.testName || "Comprehensive Diagnostic Report",
-                              category: "LABORATORY PANEL",
-                              date: selectedPatientData?.labReports?.[0]?.sampleDate?.slice(0, 10) || "2024",
-                              results: selectedPatientData?.labReports,
-                            })}
-                            style={{ width: "100%", display: "flex", alignItems: "center", justifyContent: "center", gap: "0.3rem", fontWeight: 700 }}
-                          >
-                            <FileText size={13} /> VIEW RECORD
-                          </Button>
-                        </div>
-
-                        {/* Prescription */}
-                        <div style={{ background: "var(--color-surface)", padding: "1rem", borderRadius: "8px", border: "1px solid var(--color-border)", display: "flex", flexDirection: "column", justifyContent: "space-between" }}>
-                          <div>
-                            <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: "0.4rem" }}>
-                              <span style={{ background: "rgba(245, 158, 11, 0.12)", color: "var(--color-signal-warning)", padding: "0.15rem 0.4rem", borderRadius: "4px", fontSize: "0.7rem", fontWeight: 700 }}>
-                                PRESCRIPTION
-                              </span>
-                              <span className="type-id" style={{ fontSize: "0.75rem", color: "var(--color-ink-muted)" }}>Pharmacy</span>
-                            </div>
-                            <div className="type-value" style={{ fontSize: "0.85rem", fontWeight: 700, marginBottom: "0.3rem" }}>
-                              Active Prescription Regimen
-                            </div>
-                            <div className="type-micro" style={{ color: "var(--color-ink-secondary)", marginBottom: "0.75rem", lineHeight: 1.3 }}>
-                              {selectedPatientData?.medications?.map((m) => m.name).slice(0, 2).join(", ") || "Active posology"}
-                            </div>
-                          </div>
-                          <Button
-                            size="sm"
-                            onClick={() => setSelectedRecordModal({
-                              type: "PRESCRIPTION",
-                              title: "Active Clinical Prescriptions",
-                              category: "PHARMACY DISPENSE",
-                              date: "2024",
-                              medications: selectedPatientData?.medications,
-                              prescribingDoctor: displayName,
-                            })}
-                            style={{ width: "100%", display: "flex", alignItems: "center", justifyContent: "center", gap: "0.3rem", fontWeight: 700 }}
-                          >
-                            <FileText size={13} /> VIEW RECORD
-                          </Button>
-                        </div>
-
-                        {/* Medical Document */}
-                        <div style={{ background: "var(--color-surface)", padding: "1rem", borderRadius: "8px", border: "1px solid var(--color-border)", display: "flex", flexDirection: "column", justifyContent: "space-between" }}>
-                          <div>
-                            <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: "0.4rem" }}>
-                              <span style={{ background: "rgba(100, 116, 139, 0.12)", color: "var(--color-ink-secondary)", padding: "0.15rem 0.4rem", borderRadius: "4px", fontSize: "0.7rem", fontWeight: 700 }}>
-                                MEDICAL DOCUMENT
-                              </span>
-                              <span className="type-id" style={{ fontSize: "0.75rem", color: "var(--color-ink-muted)" }}>Clinical EHR</span>
-                            </div>
-                            <div className="type-value" style={{ fontSize: "0.85rem", fontWeight: 700, marginBottom: "0.3rem" }}>
-                              {selectedPatientData?.medicalRecords?.find((r) => r.recordType === "CONSULTATION")?.title || "Clinical Summary"}
-                            </div>
-                            <div className="type-micro" style={{ color: "var(--color-ink-secondary)", marginBottom: "0.75rem", lineHeight: 1.3 }}>
-                              {selectedPatientData?.medicalRecords?.find((r) => r.recordType === "CONSULTATION")?.description || "Consultation notes on record"}
-                            </div>
-                          </div>
-                          <div style={{ display: "flex", gap: "0.4rem" }}>
-                            <Button
-                              size="sm"
-                              variant="secondary"
-                              onClick={() => setSelectedRecordModal({
-                                type: "DOCUMENT",
-                                title: "Clinical Summary & Immunization History",
-                                category: "EHR DOCUMENT",
-                                date: "2024",
-                                documents: selectedPatientData?.medicalRecords,
-                              })}
-                              style={{ flex: 1, display: "flex", alignItems: "center", justifyContent: "center", gap: "0.2rem", fontSize: "0.75rem" }}
-                            >
-                              <Eye size={12} /> VIEW
-                            </Button>
-                            <Button
-                              size="sm"
-                              onClick={() => toast.success(`Downloading EHR summary for ${selectedPatientData?.patient?.fullName || activePatient.patientName} (PDF)...`)}
-                              style={{ flex: 1, display: "flex", alignItems: "center", justifyContent: "center", gap: "0.2rem", fontSize: "0.75rem", background: "var(--color-surface-alt)" }}
-                            >
-                              <Download size={12} /> PDF
-                            </Button>
-                          </div>
-                        </div>
-                      </div>
-                    </InstrumentPanel>
-
-                    {/* 5. CLINICAL WORKSPACE & VITAL PARAMETERS */}
-                    <div style={{ display: "grid", gridTemplateColumns: "1.5fr 1fr", gap: "1.25rem" }}>
-                      <InstrumentPanel title="Clinical Notes & Diagnosis" subtitle="CONSULTATION WORKSPACE" channel="muted">
-                        <div>
-                          <div className="type-label" style={{ color: "var(--color-ink-secondary)", marginBottom: "0.5rem" }}>
-                            PRESENTING COMPLAINT & CLINICAL ASSESSMENT
-                          </div>
-                          <textarea
-                            className="precision-input"
-                            style={{ minHeight: "130px", resize: "vertical", fontFamily: "'Inter', sans-serif", fontSize: "0.875rem" }}
-                            placeholder="Enter clinical examination findings, symptoms, differential diagnosis..."
-                            value={clinicalNotes}
-                            onChange={(e) => setClinicalNotes(e.target.value)}
-                          />
-                        </div>
-                        <div style={{ marginTop: "1rem", display: "grid", gridTemplateColumns: "1fr 1fr", gap: "1rem" }}>
-                          <div>
-                            <div className="type-label" style={{ color: "var(--color-ink-secondary)", marginBottom: "0.35rem" }}>DIAGNOSIS (ICD-10)</div>
-                            <input className="precision-input" placeholder="ICD-10 Code..." defaultValue={selectedPatientData?.diseases?.[0]?.icdCode || ""} />
-                          </div>
-                          <div>
-                            <div className="type-label" style={{ color: "var(--color-ink-secondary)", marginBottom: "0.35rem" }}>FOLLOW-UP DATE</div>
-                            <input className="precision-input" type="date" defaultValue="2026-09-15" />
-                          </div>
-                        </div>
-                        <div style={{ marginTop: "1rem", display: "flex", gap: "0.75rem", flexWrap: "wrap" }}>
-                          <Button onClick={() => setRxOpen(true)} style={{ display: "flex", alignItems: "center", gap: "0.4rem" }}>
-                            <FileText size={12} /> BUILD PRESCRIPTION
-                          </Button>
-                          <Button variant="secondary" onClick={() => toast.success("Consultation notes saved.")}>
-                            SAVE NOTES
-                          </Button>
-                          <Button
-                            variant="secondary"
-                            style={{ marginLeft: "auto" }}
-                            onClick={() => {
-                              toast.success(`Consultation completed for ${selectedPatientData?.patient?.fullName || activePatient.patientName}. Next patient.`);
-                              setActiveTab("queue");
-                            }}
-                          >
-                            END CONSULTATION →
-                          </Button>
-                        </div>
-                      </InstrumentPanel>
-
-                      <InstrumentPanel title="Vital Parameters" subtitle="CURRENT OPD VISIT" channel="muted">
-                        <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: "0.75rem", padding: "0.5rem 0" }}>
-                          {[
-                            { l: "Blood Pressure", v: activePatient.vitals?.bp || "120/80", p: "mmHg" },
-                            { l: "Heart Rate", v: activePatient.vitals?.pulse || "76", p: "bpm" },
-                            { l: "Temperature", v: activePatient.vitals?.temp || "98.6°F", p: "°F" },
-                            { l: "SpO₂", v: activePatient.vitals?.spo2 || "98%", p: "%" },
-                          ].map(({ l, v, p }) => (
-                            <div key={l}>
-                              <div className="type-label" style={{ color: "var(--color-ink-secondary)", marginBottom: "0.25rem" }}>{l.toUpperCase()}</div>
-                              <input className="precision-input" defaultValue={v} placeholder={p} />
-                            </div>
-                          ))}
-                        </div>
-                      </InstrumentPanel>
-                    </div>
-                  </div>
-                )}
-              </div>
-            )}
-
-          </div>
+          <ConsultationWorkspace
+            patient={activePatient}
+            doctorUser={user}
+            onGoToQueue={() => setActiveTab("queue")}
+            onCompleteConsultation={handleCompleteConsultation}
+            onReauthorize={(p) => handleOpenPatientModal(p)}
+          />
         )}
 
-        {/* RECORDS TAB */}
+        {/* TAB 3: PATIENT RECORDS */}
         {activeTab === "records" && (
           <div className="fade-in">
-            <InstrumentPanel
-              title={`Medical History — ${selectedPatientData?.patient?.fullName || activePatient.patientName || "Patient"}`}
-              subtitle={`UHIS ID: ${selectedPatientData?.patient?.uhisId || activePatient.patientId || "RV-2026-001"}`}
-              channel="muted"
-            >
-              {selectedPatientData?.diseases && selectedPatientData.diseases.length > 0 ? (
-                selectedPatientData.diseases.map((c) => (
-                  <div key={c.id} className="data-row">
-                    <div>
-                      <span className="type-value" style={{ color: "var(--color-ink)", fontSize: "0.85rem" }}>{c.name}</span>
-                      <span className="type-micro" style={{ color: "var(--color-ink-secondary)", marginLeft: "0.5rem" }}>{c.icdCode}</span>
-                      {c.notes && <div className="type-micro" style={{ color: "var(--color-ink-muted)", marginTop: "0.2rem" }}>{c.notes}</div>}
-                    </div>
-                    <StatusCode
-                      status={c.severity === "SEVERE" ? "critical" : c.severity === "MODERATE" ? "warning" : "normal"}
-                      label={(c.severity || "ACTIVE").toUpperCase()}
-                    />
+            {activePatient && (activePatient.status === "in-consultation" || activePatient.status === "access_granted") ? (
+              <div>
+                <div
+                  style={{
+                    background: "var(--color-surface)",
+                    border: "1px solid var(--color-border)",
+                    borderRadius: "8px",
+                    padding: "0.75rem 1.25rem",
+                    marginBottom: "1rem",
+                    display: "flex",
+                    justifyContent: "space-between",
+                    alignItems: "center",
+                  }}
+                >
+                  <div style={{ display: "flex", alignItems: "center", gap: "0.6rem" }}>
+                    <ShieldCheck size={16} style={{ color: "var(--color-signal-normal)" }} />
+                    <span className="type-value" style={{ fontSize: "0.875rem", fontWeight: 600 }}>
+                      Active Patient EHR: {activePatient.patientName || activePatient.name} ({activePatient.token})
+                    </span>
                   </div>
-                ))
-              ) : (
-                <div className="type-micro" style={{ color: "var(--color-ink-muted)", padding: "0.75rem 0" }}>
-                  No medical history records found for this patient.
+                  <span className="type-micro" style={{ color: "var(--color-signal-normal)", fontWeight: 600 }}>
+                    ABDM Consent Verified
+                  </span>
                 </div>
-              )}
-            </InstrumentPanel>
+
+                <AIPatientOverview mode="doctor" patientData={activePatient} />
+                
+                <InstrumentPanel
+                  title={`Medical History & Past Diagnoses — ${activePatient.patientName || activePatient.name || "Rahul Verma"}`}
+                  subtitle="PATIENT EHR RECORDS"
+                  channel="muted"
+                >
+                  {conditions.map((c) => (
+                    <div key={c.id} className="data-row">
+                      <div>
+                        <span className="type-value" style={{ color: "var(--color-ink)", fontSize: "0.85rem" }}>{c.name}</span>
+                        <span className="type-micro" style={{ color: "var(--color-ink-secondary)", marginLeft: "0.5rem" }}>{c.icd10}</span>
+                      </div>
+                      <StatusCode
+                        status={c.status === "chronic" ? "critical" : c.status === "active" ? "warning" : "normal"}
+                        label={c.status.toUpperCase()}
+                      />
+                    </div>
+                  ))}
+                </InstrumentPanel>
+              </div>
+            ) : (
+              <div
+                className="instrument-panel"
+                style={{
+                  padding: "3.5rem 2rem",
+                  textAlign: "center",
+                  maxWidth: "680px",
+                  margin: "1.5rem auto",
+                }}
+              >
+                <div
+                  style={{
+                    width: "56px",
+                    height: "56px",
+                    borderRadius: "12px",
+                    background: "var(--color-surface-alt)",
+                    color: "var(--color-ink-secondary)",
+                    display: "flex",
+                    alignItems: "center",
+                    justifyContent: "center",
+                    margin: "0 auto 1.25rem",
+                  }}
+                >
+                  <Lock size={28} />
+                </div>
+
+                <div className="type-heading" style={{ fontSize: "1.25rem", marginBottom: "0.5rem" }}>
+                  EHR HEALTH RECORDS GUARD
+                </div>
+
+                <p
+                  className="type-body"
+                  style={{
+                    color: "var(--color-ink-secondary)",
+                    fontSize: "0.9rem",
+                    maxWidth: "500px",
+                    margin: "0 auto 1.75rem",
+                    lineHeight: 1.6,
+                  }}
+                >
+                  Under Ayushman Bharat Digital Mission (ABDM) and UHIS privacy protocols, patient medical records and longitudinal health data cannot be browsed without active patient presence and authorized OTP consent.
+                </p>
+
+                <div style={{ display: "flex", justifyContent: "center", gap: "0.75rem" }}>
+                  <Button
+                    onClick={() => setActiveTab("queue")}
+                    style={{ display: "inline-flex", alignItems: "center", gap: "0.45rem" }}
+                  >
+                    SELECT PATIENT FROM OPD QUEUE <ArrowRight size={14} />
+                  </Button>
+                </div>
+              </div>
+            )}
           </div>
         )}
-
       </div>
 
-      {/* Prescription Builder Modal */}
-      <Modal isOpen={rxOpen} onClose={() => setRxOpen(false)} title="Digital Prescription Builder" subtitle="RX BUILDER" width="680px">
-        <div style={{ marginBottom: "1rem" }}>
-          <div className="type-label" style={{ color: "var(--color-ink-secondary)", marginBottom: "0.5rem" }}>
-            PATIENT: {activePatient.patientName || activePatient.name} · {activePatient.patientId || "P-10042"}
-          </div>
-        </div>
-        <div style={{ display: "flex", flexDirection: "column", gap: "0.75rem" }}>
-          {rxItems.map((item, i) => (
-            <div
-              key={i}
-              style={{
-                display: "grid",
-                gridTemplateColumns: "2fr 1fr 1fr 1fr auto",
-                gap: "0.5rem",
-                alignItems: "end",
-                padding: "0.75rem",
-                background: "var(--color-surface)",
-                border: "1px solid var(--color-border)",
-                borderRadius: "8px",
-              }}
-            >
-              <PrecisionInput label="Medication" value={item.name} onChange={(e) =>
-                setRxItems((prev) => prev.map((x, idx) => idx === i ? { ...x, name: e.target.value } : x))
-              } placeholder="Metformin HCl" />
-              <PrecisionInput label="Dosage" value={item.dosage} onChange={(e) =>
-                setRxItems((prev) => prev.map((x, idx) => idx === i ? { ...x, dosage: e.target.value } : x))
-              } placeholder="500mg" />
-              <div>
-                <div className="type-label" style={{ color: "var(--color-ink-secondary)", marginBottom: "0.35rem" }}>FREQUENCY</div>
-                <select
-                  className="precision-input"
-                  value={item.frequency}
-                  onChange={(e) => setRxItems((prev) => prev.map((x, idx) => idx === i ? { ...x, frequency: e.target.value } : x))}
-                >
-                  {["1-0-0", "0-0-1", "1-0-1", "1-1-0", "1-1-1", "As needed"].map((f) => (
-                    <option key={f}>{f}</option>
-                  ))}
-                </select>
-              </div>
-              <PrecisionInput label="Duration" value={item.duration} onChange={(e) =>
-                setRxItems((prev) => prev.map((x, idx) => idx === i ? { ...x, duration: e.target.value } : x))
-              } placeholder="7 days" />
-              <button
-                type="button"
-                onClick={() => removeRxItem(i)}
-                style={{ background: "none", border: "none", cursor: "pointer", color: "var(--color-signal-critical)", padding: "0 0 8px" }}
-              >
-                <X size={16} />
-              </button>
-            </div>
-          ))}
-          <Button variant="secondary" size="sm" onClick={addRxItem} style={{ display: "flex", alignItems: "center", gap: "0.4rem", width: "fit-content" }}>
-            <Plus size={11} /> ADD MEDICATION
-          </Button>
-        </div>
-        <div style={{ marginTop: "1.5rem", display: "flex", gap: "0.75rem" }}>
-          <Button variant="secondary" onClick={() => setRxOpen(false)}>CANCEL</Button>
-          <Button onClick={() => { toast.success("Prescription saved and dispatched to pharmacy."); setRxOpen(false); }}>
-            SIGN & DISPATCH →
-          </Button>
-        </div>
-      </Modal>
-
-      <style>{`
-        @media (max-width: 900px) {
-          .consult-grid { grid-template-columns: 1fr !important; }
-        }
-      `}</style>
+      {/* Patient Access Lock Modal */}
+      <PatientAccessLockModal
+        isOpen={isAccessModalOpen}
+        patient={selectedPatientForModal}
+        onClose={() => setIsAccessModalOpen(false)}
+        onCallPatient={handleCallPatient}
+        onMarkPresent={handleMarkPresent}
+        onRequestOtp={handleRequestOtp}
+        onVerifyOtp={handleVerifyOtp}
+        onOpenConsultation={handleOpenConsultation}
+      />
     </AppLayout>
   );
 }
