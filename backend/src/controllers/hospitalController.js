@@ -85,7 +85,32 @@ const createDoctor = async (req, res, next) => {
   }
 };
 
+const getAllHospitals = async (req, res, next) => {
+  try {
+    const hospitals = await prisma.hospital.findMany({
+      where: { isActive: true },
+      orderBy: { name: 'asc' },
+      select: {
+        id: true,
+        name: true,
+        code: true,
+        address: true,
+        city: true,
+        state: true,
+        contactNo: true,
+        email: true,
+      },
+    });
+
+    res.status(200).json({ success: true, hospitals });
+  } catch (error) {
+    next(error);
+  }
+};
+
 module.exports = {
   getHospitalMetrics,
   createDoctor,
+  getAllHospitals,
 };
+

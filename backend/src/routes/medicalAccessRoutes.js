@@ -4,12 +4,14 @@ const rbacMiddleware = require('../middleware/rbacMiddleware');
 const {
   createAccessRequest,
   getPatientAccessRequests,
+  getDoctorAccessRequests,
   denyAccessRequest,
   allowAccessRequest,
   getDoctorRequestStatus,
   verifyAccessOTP,
   getAuthorizedPatientRecords,
   checkActiveSession,
+  revokeAccessSession,
 } = require('../controllers/medicalAccessController');
 
 const router = express.Router();
@@ -19,10 +21,15 @@ router.use(authMiddleware);
 
 // Doctor routes
 router.post('/request', rbacMiddleware('DOCTOR'), createAccessRequest);
+router.get('/doctor/requests', rbacMiddleware('DOCTOR'), getDoctorAccessRequests);
 router.get('/doctor/status/:requestId', rbacMiddleware('DOCTOR'), getDoctorRequestStatus);
 router.post('/doctor/verify-otp', rbacMiddleware('DOCTOR'), verifyAccessOTP);
 router.post('/verify-otp', rbacMiddleware('DOCTOR'), verifyAccessOTP);
 router.get('/records/:patientId', rbacMiddleware('DOCTOR'), getAuthorizedPatientRecords);
+router.post('/session/revoke', rbacMiddleware('DOCTOR'), revokeAccessSession);
+router.post('/session/:sessionId/revoke', rbacMiddleware('DOCTOR'), revokeAccessSession);
+router.post('/doctor/revoke-session/:sessionId', rbacMiddleware('DOCTOR'), revokeAccessSession);
+router.post('/revoke/:patientId', rbacMiddleware('DOCTOR'), revokeAccessSession);
 
 // Patient routes
 router.get('/patient/requests', rbacMiddleware('PATIENT'), getPatientAccessRequests);

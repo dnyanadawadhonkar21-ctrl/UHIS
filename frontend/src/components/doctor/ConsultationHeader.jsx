@@ -5,7 +5,8 @@ import {
   CheckCircle2, 
   AlertCircle,
   User,
-  ArrowLeft
+  ArrowLeft,
+  Lock
 } from "lucide-react";
 import Button from "../ui/Button";
 
@@ -13,11 +14,23 @@ export default function ConsultationHeader({
   patient,
   onCompleteConsultation,
   onBackToQueue,
+  session,
+  sessionSecondsLeft,
+  onEndAccess,
 }) {
   if (!patient) return null;
 
   const isEmergency = patient.priority === "emergency";
   const isUrgent = patient.priority === "urgent";
+
+  const formatTime = (totalSec) => {
+    if (totalSec === undefined || totalSec === null) return "15:00";
+    const mins = Math.floor(Math.max(0, totalSec) / 60);
+    const secs = Math.max(0, totalSec) % 60;
+    return `${String(mins).padStart(2, "0")}:${String(secs).padStart(2, "0")}`;
+  };
+
+  const isExpiringSoon = sessionSecondsLeft !== undefined && sessionSecondsLeft !== null && sessionSecondsLeft <= 120;
 
   return (
     <div
@@ -119,27 +132,50 @@ export default function ConsultationHeader({
 
         {/* Right: Access Status & Consultation Actions */}
         <div style={{ display: "flex", alignItems: "center", gap: "0.75rem", flexWrap: "wrap" }}>
-          {/* Access Status Pill */}
+          {/* Access Status & Live Session Countdown */}
           <div
             style={{
               display: "inline-flex",
               alignItems: "center",
               gap: "6px",
-              background: "var(--color-signal-normal-bg)",
-              border: "1px solid var(--color-signal-normal-border)",
-              color: "var(--color-signal-normal)",
+              background: isExpiringSoon ? "var(--color-signal-warning-bg)" : "var(--color-signal-normal-bg)",
+              border: `1px solid ${isExpiringSoon ? "var(--color-signal-warning-border)" : "var(--color-signal-normal-border)"}`,
+              color: isExpiringSoon ? "var(--color-signal-warning)" : "var(--color-signal-normal)",
               padding: "0.35rem 0.75rem",
               borderRadius: "99px",
               fontSize: "0.75rem",
-              fontWeight: 600,
+              fontWeight: 700,
             }}
           >
-            <ShieldCheck size={14} />
-            <span>Temporary Access Active</span>
-            <span style={{ opacity: 0.75, fontSize: "0.7rem", fontFamily: "var(--font-mono, monospace)" }}>
-              (15m Session)
+            {isExpiringSoon ? (
+              <Clock size={14} style={{ color: "var(--color-signal-warning)" }} />
+            ) : (
+              <ShieldCheck size={14} />
+            )}
+            <span>EHR Access: {formatTime(sessionSecondsLeft)}</span>
+            <span style={{ opacity: 0.8, fontSize: "0.7rem", fontFamily: "var(--font-mono, monospace)" }}>
+              Remaining
             </span>
           </div>
+
+          {onEndAccess && (
+            <Button
+              size="sm"
+              variant="secondary"
+              onClick={() => onEndAccess(patient)}
+              style={{
+                display: "flex",
+                alignItems: "center",
+                gap: "0.35rem",
+                color: "var(--color-signal-critical)",
+                borderColor: "var(--color-signal-critical-border)",
+                background: "var(--color-signal-critical-bg)",
+              }}
+              title="Immediately end and revoke temporary EHR access session"
+            >
+              <Lock size={13} /> End Access
+            </Button>
+          )}
 
           <Button
             size="sm"

@@ -44,9 +44,13 @@ import { useToast } from "../context/ToastContext";
 import api from "../services/api";
 import { visits as mockVisitsList, timelineEvents as mockTimelineEvents } from "../data/mockData";
 import AIPatientOverview from "../components/patient/AIPatientOverview";
+import FindDoctorView from "../components/patient/FindDoctorView";
+import MyAppointmentsView from "../components/patient/MyAppointmentsView";
 
 const TABS = [
   { id: "overview", label: "OVERVIEW" },
+  { id: "find-doctor", label: "FIND A DOCTOR" },
+  { id: "appointments", label: "MY APPOINTMENTS" },
   { id: "records", label: "MEDICAL RECORDS" },
   { id: "emergency", label: "🚨 EMERGENCY ACCESS" },
   { id: "conditions", label: "CONDITIONS" },
@@ -1370,6 +1374,20 @@ export default function PatientDashboard() {
         )}
 
 
+        {/* FIND A DOCTOR TAB */}
+        {activeTab === "find-doctor" && (
+          <div className="fade-in">
+            <FindDoctorView onNavigateToAppointments={() => setActiveTab("appointments")} />
+          </div>
+        )}
+
+        {/* MY APPOINTMENTS TAB */}
+        {activeTab === "appointments" && (
+          <div className="fade-in">
+            <MyAppointmentsView onBookNewAppointment={() => setActiveTab("find-doctor")} />
+          </div>
+        )}
+
         {/* OVERVIEW TAB */}
         {activeTab === "overview" && (
           <div className="fade-in">
@@ -1565,12 +1583,20 @@ export default function PatientDashboard() {
 
               {/* Upcoming visits */}
               <InstrumentPanel title="Upcoming Appointments" subtitle="SCHEDULED VISITS" channel="normal"
-                action={<Button variant="secondary" size="sm" onClick={() => setActiveTab("visits")}>ALL VISITS</Button>}>
+                action={
+                  <div style={{ display: "flex", gap: "0.4rem" }}>
+                    <Button variant="primary" size="sm" onClick={() => setActiveTab("find-doctor")}>FIND A DOCTOR</Button>
+                    <Button variant="secondary" size="sm" onClick={() => setActiveTab("appointments")}>MY APPOINTMENTS</Button>
+                  </div>
+                }>
                 {visitsList.length === 0 ? (
                   <div style={{ padding: "1.75rem 1rem", textAlign: "center" }}>
-                    <p className="type-body" style={{ color: "var(--color-ink-secondary)", fontSize: "0.85rem" }}>
+                    <p className="type-body" style={{ color: "var(--color-ink-secondary)", fontSize: "0.85rem", marginBottom: "0.75rem" }}>
                       No upcoming appointments scheduled.
                     </p>
+                    <Button variant="primary" size="sm" onClick={() => setActiveTab("find-doctor")}>
+                      Find a Doctor & Book Slot
+                    </Button>
                   </div>
                 ) : (
                   visitsList.slice(0, 3).map((v) => (

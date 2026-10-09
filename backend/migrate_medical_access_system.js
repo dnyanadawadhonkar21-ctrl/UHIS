@@ -81,6 +81,21 @@ async function migrateMedicalAccessSystem() {
     }
   }
 
+  // 5. Add endedAt and revocationReason columns to MedicalAccessSession if not present
+  console.log('Step 5: Ensuring endedAt and revocationReason on MedicalAccessSession...');
+  try {
+    await prisma.$executeRawUnsafe(`ALTER TABLE "MedicalAccessSession" ADD COLUMN "endedAt" DATETIME;`);
+    console.log('  ✅ Added "endedAt" column to MedicalAccessSession table.');
+  } catch (err) {
+    console.log('  ℹ️ endedAt column notice:', err.message);
+  }
+  try {
+    await prisma.$executeRawUnsafe(`ALTER TABLE "MedicalAccessSession" ADD COLUMN "revocationReason" TEXT;`);
+    console.log('  ✅ Added "revocationReason" column to MedicalAccessSession table.');
+  } catch (err) {
+    console.log('  ℹ️ revocationReason column notice:', err.message);
+  }
+
   console.log('✅ Database migration for Medical Record Access Request System completed successfully!');
 }
 

@@ -13,6 +13,7 @@ const accessDb = {
               d."specialization" as "doctorSpecialization",
               d."licenseNumber" as "doctorLicense",
               uDoc."fullName" as "doctorName",
+              uDoc."id" as "doctorUserId",
               h."name" as "hospitalName",
               p."uhisId" as "patientUhisId",
               p."abhaId" as "patientAbhaId",
@@ -168,6 +169,28 @@ const accessDb = {
     await prisma.$executeRawUnsafe(
       `UPDATE "MedicalAccessSession" SET "status" = 'EXPIRED' WHERE "id" = $1;`,
       sessionId
+    );
+  },
+
+  async revokeSession(sessionId, reason = 'Doctor ended access session') {
+    await prisma.$executeRawUnsafe(
+      `UPDATE "MedicalAccessSession" 
+       SET "status" = 'REVOKED', "endedAt" = CURRENT_TIMESTAMP, "revocationReason" = $1
+       WHERE "id" = $2;`,
+      reason,
+      sessionId
+    );
+    return this.findSessionById(sessionId);
+  },
+
+  async revokeActiveSessionsForPatient(doctorId, patientId, reason = 'Doctor ended access session') {
+    await prisma.$executeRawUnsafe(
+      `UPDATE "MedicalAccessSession"
+       SET "status" = 'REVOKED', "endedAt" = CURRENT_TIMESTAMP, "revocationReason" = $1
+       WHERE "doctorId" = $2 AND "patientId" = $3 AND "status" = 'ACTIVE';`,
+      reason,
+      doctorId,
+      patientId
     );
   },
 
@@ -502,6 +525,26 @@ const denyAccessRequest = async (req, res, next) => {
       },
     });
 
+    // Notify doctor
+    if (accessRequest.doctorUserId) {
+      const notifId = crypto.randomUUID();
+      await prisma.$executeRawUnsafe(
+        `INSERT INTO "Notification" ("id", "userId", "title", "message", "type", "data", "createdAt")
+         VALUES ($1, $2, $3, $4, 'MEDICAL_ACCESS_DENIED', $5, CURRENT_TIMESTAMP);`,
+        notifId,
+        accessRequest.doctorUserId,
+        'Medical Record Access Denied',
+        `Patient ${patient.user.fullName} denied your medical record access request.`,
+        JSON.stringify({
+          accessRequestId: requestId,
+          patientId: patient.id,
+          patientName: patient.user.fullName,
+          status: 'DENIED',
+          denialReason: updated.denialReason,
+        })
+      );
+    }
+
     return res.status(200).json({
       success: true,
       message: 'Patient denied medical record access.',
@@ -594,6 +637,26 @@ const allowAccessRequest = async (req, res, next) => {
         ipAddress: req.ip || req.connection?.remoteAddress || '127.0.0.1',
       },
     });
+
+    // Notify doctor that request is APPROVED and waiting for patient's OTP
+    if (accessRequest.doctorUserId) {
+      const notifId = crypto.randomUUID();
+      await prisma.$executeRawUnsafe(
+        `INSERT INTO "Notification" ("id", "userId", "title", "message", "type", "data", "createdAt")
+         VALUES ($1, $2, $3, $4, 'MEDICAL_ACCESS_APPROVED', $5, CURRENT_TIMESTAMP);`,
+        notifId,
+        accessRequest.doctorUserId,
+        'Medical Record Access Approved',
+        `Patient ${patient.user.fullName} approved your access request. Ask patient for the 6-digit OTP to unlock medical records.`,
+        JSON.stringify({
+          accessRequestId: requestId,
+          patientId: patient.id,
+          patientName: patient.user.fullName,
+          status: 'APPROVED',
+          expiresAt: expiresAt.toISOString(),
+        })
+      );
+    }
 
     // Return plain OTP ONLY to the authenticated patient
     return res.status(200).json({
@@ -899,6 +962,26 @@ const verifyAccessOTP = async (req, res, next) => {
       },
     });
 
+    // Notify patient that access session is active
+    if (accessRequest.patientUserId) {
+      const notifId = crypto.randomUUID();
+      await prisma.$executeRawUnsafe(
+        `INSERT INTO "Notification" ("id", "userId", "title", "message", "type", "data", "createdAt")
+         VALUES ($1, $2, $3, $4, 'MEDICAL_ACCESS_ACTIVATED', $5, CURRENT_TIMESTAMP);`,
+        notifId,
+        accessRequest.patientUserId,
+        'Medical Record Access Active',
+        `Dr. ${doctor.user.fullName} has verified the OTP. Temporary 15-minute access to your medical records has started.`,
+        JSON.stringify({
+          sessionId: session.id,
+          accessRequestId: accessRequest.id,
+          doctorId: doctor.id,
+          doctorName: doctor.user.fullName,
+          expiresAt: session.expiresAt,
+        })
+      );
+    }
+
     return res.status(200).json({
       success: true,
       message: 'OTP verified successfully. Temporary 15-minute medical record access granted.',
@@ -995,6 +1078,14 @@ const getAuthorizedPatientRecords = async (req, res, next) => {
 
       const recentSession = recentSessions && recentSessions.length > 0 ? recentSessions[0] : null;
       const now = new Date();
+
+      if (recentSession && recentSession.status === 'REVOKED') {
+        return res.status(403).json({
+          success: false,
+          error: 'ACCESS_REVOKED',
+          message: 'Medical record access has been ended and revoked. A new patient OTP authorization is required.',
+        });
+      }
 
       if (recentSession && (recentSession.status === 'EXPIRED' || (recentSession.expiresAt && now > new Date(recentSession.expiresAt)))) {
         if (recentSession.status !== 'EXPIRED') {
@@ -1288,14 +1379,165 @@ const checkActiveSession = async (req, res, next) => {
   }
 };
 
+/**
+ * SECTION 8: Listing the authenticated doctor's access requests
+ * GET /api/v1/medical-access/doctor/requests
+ */
+const getDoctorAccessRequests = async (req, res, next) => {
+  try {
+    if (!req.user || req.user.role !== 'DOCTOR') {
+      return res.status(403).json({
+        success: false,
+        message: 'Access forbidden: Doctor role required.',
+      });
+    }
+
+    const doctor = await prisma.doctor.findUnique({
+      where: { userId: req.user.id },
+    });
+
+    if (!doctor) {
+      return res.status(404).json({ success: false, message: 'Doctor profile not found.' });
+    }
+
+    const requests = await accessDb.findByDoctor(doctor.id);
+
+    const now = new Date();
+    const formatted = requests.map((r) => {
+      let currentStatus = r.status;
+      if (r.status === 'APPROVED' && r.otpExpiresAt && now > new Date(r.otpExpiresAt)) {
+        currentStatus = 'EXPIRED';
+      } else if (r.status === 'COMPLETED' && r.sessionExpiresAt && now > new Date(r.sessionExpiresAt)) {
+        currentStatus = 'EXPIRED';
+      }
+
+      return {
+        id: r.id,
+        patientId: r.patientId,
+        patientName: r.patientName,
+        patientUhisId: r.patientUhisId,
+        patientAbhaId: r.patientAbhaId,
+        reason: r.reason,
+        status: currentStatus,
+        requestedAt: r.requestedAt,
+        respondedAt: r.respondedAt,
+        denialReason: r.denialReason,
+        otpExpiresAt: r.otpExpiresAt,
+        sessionId: r.sessionId,
+        sessionExpiresAt: r.sessionExpiresAt,
+        sessionStatus: r.sessionStatus,
+      };
+    });
+
+    return res.status(200).json({
+      success: true,
+      requests: formatted,
+    });
+  } catch (error) {
+    next(error);
+  }
+};
+
+/**
+ * SECTION 6 & 8: Ending/revoking an active access session early
+ * POST /api/v1/medical-access/session/revoke
+ * or POST /api/v1/medical-access/session/:sessionId/revoke
+ * or POST /api/v1/medical-access/revoke/:patientId
+ * Body: { sessionId?, patientId?, reason? }
+ */
+const revokeAccessSession = async (req, res, next) => {
+  try {
+    if (!req.user || req.user.role !== 'DOCTOR') {
+      return res.status(403).json({
+        success: false,
+        message: 'Access forbidden: Doctor role required to revoke access sessions.',
+      });
+    }
+
+    const doctor = await prisma.doctor.findUnique({
+      where: { userId: req.user.id },
+      include: { user: true },
+    });
+
+    if (!doctor) {
+      return res.status(404).json({ success: false, message: 'Doctor profile not found.' });
+    }
+
+    const targetSessionId = req.params.sessionId || req.body.sessionId;
+    const rawPatientId = req.params.patientId || req.body.patientId;
+    const reason = req.body.reason || 'Doctor concluded examination and closed access session.';
+
+    let session = null;
+    if (targetSessionId) {
+      session = await accessDb.findSessionById(targetSessionId);
+    } else if (rawPatientId) {
+      const trimmedId = rawPatientId.trim();
+      const patient = await prisma.patient.findFirst({
+        where: {
+          OR: [
+            { id: trimmedId },
+            { uhisId: trimmedId },
+            { abhaId: trimmedId },
+          ],
+        },
+      });
+      if (patient) {
+        session = await accessDb.findActiveSession(doctor.id, patient.id);
+      }
+    }
+
+    if (!session) {
+      return res.status(404).json({
+        success: false,
+        message: 'Active medical access session not found to revoke.',
+      });
+    }
+
+    if (session.doctorId !== doctor.id) {
+      return res.status(403).json({
+        success: false,
+        message: 'Forbidden: You do not own this medical access session.',
+      });
+    }
+
+    // Revoke session in database
+    await accessDb.revokeSession(session.id, reason);
+
+    // Audit log: MEDICAL_ACCESS_REVOKED
+    await prisma.auditLog.create({
+      data: {
+        userId: req.user.id,
+        action: 'MEDICAL_ACCESS_REVOKED',
+        resource: 'MEDICAL_ACCESS_SESSION',
+        details: `Doctor ${doctor.user.fullName} revoked medical access session ${session.id} for Patient ${session.patientId}. Reason: ${reason}`,
+        ipAddress: req.ip || req.connection?.remoteAddress || '127.0.0.1',
+      },
+    });
+
+    return res.status(200).json({
+      success: true,
+      message: 'Medical record access session ended early and revoked successfully.',
+      session: {
+        id: session.id,
+        status: 'REVOKED',
+        endedAt: new Date().toISOString(),
+      },
+    });
+  } catch (error) {
+    next(error);
+  }
+};
+
 module.exports = {
   accessDb,
   createAccessRequest,
   getPatientAccessRequests,
+  getDoctorAccessRequests,
   denyAccessRequest,
   allowAccessRequest,
   getDoctorRequestStatus,
   verifyAccessOTP,
   getAuthorizedPatientRecords,
   checkActiveSession,
+  revokeAccessSession,
 };

@@ -26,8 +26,9 @@ router.get('/:patientId/profile', patientController.getPatientProfile);
 
 router.get('/timeline/:patientId?', patientController.getUnifiedTimeline);
 router.get('/ai-overview/:patientId?', patientController.getPatientAiOverview);
+router.get('/appointments', rbacMiddleware('PATIENT'), patientController.getPatientAppointments);
 router.post('/appointments', rbacMiddleware('PATIENT', 'RECEPTIONIST'), patientController.bookAppointment);
-router.put('/appointments/:appointmentId/cancel', patientController.cancelAppointment);
+router.put('/appointments/:appointmentId/cancel', rbacMiddleware('PATIENT'), patientController.cancelAppointment);
 router.put('/profile', rbacMiddleware('PATIENT'), patientController.updatePatientProfile);
 
 // Medical Records Endpoints

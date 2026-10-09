@@ -4,18 +4,23 @@ import Button from "../ui/Button";
 import StatusCode from "../ui/StatusCode";
 
 const STATUS_SIGNAL_MAP = {
+  booked: "info",
+  checked_in: "info",
   waiting: "warning",
   called: "purple",
   patient_present: "info",
   otp_pending: "warning",
   "in-consultation": "info",
   completed: "normal",
+  cancelled: "critical",
+  no_show: "critical",
 };
 
 export default function WaitingQueueTable({
   patients,
   onSelectPatient,
   onCallPatient,
+  onRequestMedicalRecords,
 }) {
   if (!patients || patients.length === 0) {
     return (
@@ -75,7 +80,7 @@ export default function WaitingQueueTable({
         <table style={{ width: "100%", borderCollapse: "collapse" }}>
           <thead>
             <tr style={{ borderBottom: "1px solid var(--color-border)" }}>
-              {["TOKEN", "PATIENT", "AGE / GENDER", "CHIEF COMPLAINT", "PRIORITY", "QUEUE STATUS", "ACTION"].map(
+              {["TOKEN", "PATIENT & IDENTIFIERS", "AGE / GENDER", "CHIEF COMPLAINT", "PRIORITY", "QUEUE STATUS", "ACTION"].map(
                 (h) => (
                   <th
                     key={h}
@@ -152,15 +157,21 @@ export default function WaitingQueueTable({
                     </div>
                   </td>
 
-                  {/* Patient Name */}
+                  {/* Patient Name & Identifiers */}
                   <td style={{ padding: "0.85rem 1rem" }}>
-                    <div style={{ display: "flex", flexDirection: "column" }}>
-                      <span className="type-value" style={{ color: "var(--color-ink)", fontSize: "0.875rem", fontWeight: 600 }}>
+                    <div style={{ display: "flex", flexDirection: "column", gap: "2px" }}>
+                      <span className="type-value" style={{ color: "var(--color-ink)", fontSize: "0.875rem", fontWeight: 700 }}>
                         {p.patientName || p.name}
                       </span>
-                      <span className="type-micro" style={{ color: "var(--color-ink-muted)" }}>
-                        {p.patientId || "P-10042"} · Waited {p.timeWaiting || "10m"}
-                      </span>
+                      <div style={{ display: "flex", alignItems: "center", gap: "0.4rem", flexWrap: "wrap" }}>
+                        <span className="type-micro" style={{ color: "var(--color-ink-secondary)" }}>
+                          ID: <strong style={{ color: "var(--color-ink)" }}>{p.patientId || p.uhisId || "P-10042"}</strong>
+                        </span>
+                        <span style={{ color: "var(--color-border-deep)" }}>•</span>
+                        <span className="type-micro" style={{ color: "var(--color-accent-primary)", fontWeight: 600 }}>
+                          ABHA: {p.abhaId || "N/A"}
+                        </span>
+                      </div>
                     </div>
                   </td>
 
@@ -234,36 +245,56 @@ export default function WaitingQueueTable({
                     style={{ padding: "0.85rem 1rem", whiteSpace: "nowrap" }}
                     onClick={(e) => e.stopPropagation()}
                   >
-                    {p.status === "waiting" && (
-                      <Button
-                        size="sm"
-                        variant={isNext ? "primary" : "secondary"}
-                        onClick={() => onCallPatient && onCallPatient(p)}
-                        style={{ display: "inline-flex", alignItems: "center", gap: "0.35rem" }}
-                      >
-                        <PhoneCall size={12} /> CALL PATIENT
-                      </Button>
+                    {(p.status === "waiting" || p.status === "booked" || p.status === "checked_in") && (
+                      <div style={{ display: "flex", gap: "0.4rem" }}>
+                        <Button
+                          size="sm"
+                          variant="secondary"
+                          onClick={() => onCallPatient && onCallPatient(p)}
+                          style={{ display: "inline-flex", alignItems: "center", gap: "0.3rem" }}
+                        >
+                          <PhoneCall size={12} /> Call
+                        </Button>
+                        <Button
+                          size="sm"
+                          variant={isNext ? "primary" : "secondary"}
+                          onClick={() => onRequestMedicalRecords ? onRequestMedicalRecords(p) : onSelectPatient(p)}
+                          style={{ display: "inline-flex", alignItems: "center", gap: "0.3rem" }}
+                        >
+                          <KeyRound size={12} /> Request Records
+                        </Button>
+                      </div>
                     )}
 
                     {p.status === "called" && (
-                      <Button
-                        size="sm"
-                        variant="primary"
-                        onClick={() => onSelectPatient && onSelectPatient(p)}
-                        style={{ display: "inline-flex", alignItems: "center", gap: "0.35rem" }}
-                      >
-                        <UserCheck size={12} /> MARK PRESENT
-                      </Button>
+                      <div style={{ display: "flex", gap: "0.4rem" }}>
+                        <Button
+                          size="sm"
+                          variant="secondary"
+                          onClick={() => onSelectPatient && onSelectPatient(p)}
+                          style={{ display: "inline-flex", alignItems: "center", gap: "0.3rem" }}
+                        >
+                          <UserCheck size={12} /> Mark Present
+                        </Button>
+                        <Button
+                          size="sm"
+                          variant="primary"
+                          onClick={() => onRequestMedicalRecords ? onRequestMedicalRecords(p) : onSelectPatient(p)}
+                          style={{ display: "inline-flex", alignItems: "center", gap: "0.3rem" }}
+                        >
+                          <KeyRound size={12} /> Request Records
+                        </Button>
+                      </div>
                     )}
 
                     {p.status === "patient_present" && (
                       <Button
                         size="sm"
                         variant="primary"
-                        onClick={() => onSelectPatient && onSelectPatient(p)}
+                        onClick={() => onRequestMedicalRecords ? onRequestMedicalRecords(p) : onSelectPatient(p)}
                         style={{ display: "inline-flex", alignItems: "center", gap: "0.35rem" }}
                       >
-                        <KeyRound size={12} /> AUTHORIZE OTP
+                        <KeyRound size={12} /> REQUEST MEDICAL RECORDS
                       </Button>
                     )}
 

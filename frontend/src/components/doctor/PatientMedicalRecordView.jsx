@@ -29,10 +29,50 @@ const SUB_TABS = [
 export default function PatientMedicalRecordView({
   patient,
   savedPrescriptions = [],
+  authorizedRecords = null,
 }) {
   const [activeSubTab, setActiveSubTab] = useState("overview");
 
   if (!patient) return null;
+
+  // Use authorized data from backend if available, otherwise mock data
+  const displayConditions = (authorizedRecords?.diseases && authorizedRecords.diseases.length > 0)
+    ? authorizedRecords.diseases.map((d) => ({
+        id: d.id,
+        name: d.name,
+        icd10: d.icdCode || "E11.9",
+        status: (d.severity === "CHRONIC" || d.severity === "SEVERE") ? "chronic" : "active",
+        diagnosedDate: d.diagnosedDate ? new Date(d.diagnosedDate).toLocaleDateString() : "Recent",
+        facility: d.hospital || "AIIMS New Delhi",
+        doctor: d.treatingDoctor || "Consulting Physician",
+        notes: d.notes,
+      }))
+    : conditions;
+
+  const displayAllergies = (authorizedRecords?.allergies && authorizedRecords.allergies.length > 0)
+    ? authorizedRecords.allergies.map((a, i) => ({
+        id: a.id || `al-${i}`,
+        allergen: a.name || a.allergen || "Known Allergen",
+        category: a.category || "Drug",
+        severity: (a.severity || "severe").toLowerCase(),
+        reaction: a.reaction || "Anaphylaxis / Hypersensitivity",
+        precautions: a.precautions || "Strict avoidance",
+      }))
+    : allergies;
+
+  const displayLabReports = (authorizedRecords?.labReports && authorizedRecords.labReports.length > 0)
+    ? authorizedRecords.labReports.map((r, i) => ({
+        id: r.id || `lab-${i}`,
+        testName: r.testName || r.test || "Laboratory Panel",
+        category: r.category || r.testCategory || "Pathology",
+        summary: r.summary || r.resultData || "Findings normal",
+        date: r.sampleDate || r.date || "Recent",
+        facility: r.laboratoryName || "Hospital Diagnostics Lab",
+        orderedBy: r.orderedBy || "Physician",
+        status: r.status === "COMPLETED" || r.status === "completed" ? "completed" : "pending",
+        abnormal: r.status === "ABNORMAL",
+      }))
+    : labReports;
 
   return (
     <div
@@ -213,7 +253,7 @@ export default function PatientMedicalRecordView({
         {activeSubTab === "history" && (
           <div className="fade-in" style={{ display: "flex", flexDirection: "column", gap: "1rem" }}>
             <InstrumentPanel title="Active & Chronic Health Conditions" subtitle="EHR DIAGNOSES" channel="muted">
-              {conditions.map((c) => (
+              {displayConditions.map((c) => (
                 <div key={c.id} className="data-row">
                   <div>
                     <div style={{ display: "flex", alignItems: "center", gap: "0.5rem" }}>
@@ -237,7 +277,7 @@ export default function PatientMedicalRecordView({
             </InstrumentPanel>
 
             <InstrumentPanel title="Allergies & Adverse Reactions" subtitle="PATIENT SAFETY REGISTRY" channel="critical">
-              {allergies.map((a) => (
+              {displayAllergies.map((a) => (
                 <div key={a.id} className="data-row">
                   <div>
                     <div style={{ fontWeight: 700, color: "var(--color-signal-critical)", fontSize: "0.85rem" }}>
@@ -273,7 +313,7 @@ export default function PatientMedicalRecordView({
         {activeSubTab === "labs" && (
           <div className="fade-in">
             <InstrumentPanel title="Diagnostic Laboratory Investigations" subtitle="PATHOLOGY & BIOCHEMISTRY" channel="muted">
-              {labReports.map((r) => (
+              {displayLabReports.map((r) => (
                 <div key={r.id} className="data-row" style={{ alignItems: "flex-start", padding: "0.85rem 1.25rem" }}>
                   <div style={{ flex: 1 }}>
                     <div style={{ display: "flex", alignItems: "center", gap: "0.5rem" }}>

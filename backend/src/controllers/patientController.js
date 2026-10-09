@@ -444,53 +444,420 @@ const getUnifiedTimeline = async (req, res, next) => {
   }
 };
 
-// Book Appointment
-const bookAppointment = async (req, res, next) => {
+// Get Appointments for Authenticated Patient
+const getPatientAppointments = async (req, res, next) => {
   try {
-    const { doctorId, hospitalId, appointmentDate, timeSlot, reason } = req.body;
-
-    const patient = await prisma.patient.findUnique({ where: { userId: req.user.id } });
-    if (!patient) {
-      return res.status(400).json({ success: false, message: 'Patient profile not found.' });
-    }
-
-    const appointment = await prisma.appointment.create({
-      data: {
-        patientId: patient.id,
-        doctorId,
-        hospitalId,
-        appointmentDate: new Date(appointmentDate),
-        timeSlot,
-        reason,
-        status: 'PENDING',
-      },
-      include: {
-        doctor: { include: { user: true } },
-        hospital: true,
-      },
+    const patient = await prisma.patient.findUnique({
+      where: { userId: req.user.id },
+      include: { user: true },
     });
 
-    res.status(201).json({
+    if (!patient) {
+      return res.status(404).json({ success: false, message: 'Patient profile not found.' });
+    }
+
+    const appointments = await prisma.appointment.findMany({
+      where: { patientId: patient.id },
+      include: {
+        doctor: {
+          include: {
+            user: { select: { fullName: true, email: true, phoneNumber: true } },
+            hospital: true,
+            department: true,
+          },
+        },
+        hospital: true,
+      },
+      orderBy: { appointmentDate: 'desc' },
+    });
+
+    // Also fetch associated DoctorQueue items to get real-time queue statuses
+    const apptIds = appointments.map((a) => a.id);
+    let queueMap = {};
+    if (apptIds.length > 0) {
+      try {
+        const placeholders = apptIds.map(() => '?').join(',');
+        const queueRows = await prisma.$queryRawUnsafe(
+          `SELECT appointmentId, queueNumber, tokenNumber, status, checkInTime, calledAt, consultedAt 
+           FROM DoctorQueue 
+           WHERE appointmentId IN (${placeholders})`,
+          ...apptIds
+        );
+        queueRows.forEach((q) => {
+          queueMap[q.appointmentId] = q;
+        });
+      } catch (err) {
+        console.error('Error querying queue data for appointments:', err);
+      }
+    }
+
+    const formatted = appointments.map((a) => {
+      const q = queueMap[a.id];
+      const isPast = new Date(a.appointmentDate) < new Date(new Date().setHours(0, 0, 0, 0));
+      return {
+        id: a.id,
+        appointmentDate: a.appointmentDate,
+        date: new Date(a.appointmentDate).toISOString().split('T')[0],
+        timeSlot: a.timeSlot,
+        reason: a.reason,
+        status: a.status,
+        queueNumber: q ? Number(q.queueNumber) : (a.queueNumber || null),
+        tokenNumber: q ? q.tokenNumber : (a.tokenNumber || null),
+        queueStatus: q ? q.status : a.status,
+        isPast,
+        canCancel: a.status !== 'CANCELLED' && a.status !== 'COMPLETED' && !isPast,
+        doctor: {
+          id: a.doctor?.id,
+          name: a.doctor?.user?.fullName ? (a.doctor.user.fullName.startsWith('Dr.') ? a.doctor.user.fullName : `Dr. ${a.doctor.user.fullName}`) : 'Doctor',
+          specialization: a.doctor?.specialization,
+          qualification: a.doctor?.qualification,
+          consultationFee: a.doctor?.consultationFee,
+          hospitalName: a.hospital?.name || a.doctor?.hospital?.name || 'UHIS Hospital',
+          hospitalAddress: a.hospital?.address || a.doctor?.hospital?.address || 'City Hospital',
+        },
+        hospital: a.hospital,
+      };
+    });
+
+    const upcoming = formatted.filter((a) => a.status !== 'CANCELLED' && a.status !== 'COMPLETED' && !a.isPast);
+    const past = formatted.filter((a) => (a.isPast || a.status === 'COMPLETED') && a.status !== 'CANCELLED');
+    const cancelled = formatted.filter((a) => a.status === 'CANCELLED');
+
+    res.status(200).json({
       success: true,
-      message: 'Appointment booked successfully.',
-      appointment,
+      appointments: formatted,
+      grouped: {
+        upcoming,
+        past,
+        cancelled,
+      },
     });
   } catch (error) {
     next(error);
   }
 };
 
-// Cancel Appointment
+// Book Appointment with atomic slot reservation, double-booking prevention & queue registration
+const bookAppointment = async (req, res, next) => {
+  try {
+    const { doctorId, hospitalId, appointmentDate, timeSlot, slotId, reason } = req.body;
+
+    // Strict authentication verification: identity derived exclusively from authenticated token
+    const patient = await prisma.patient.findUnique({
+      where: { userId: req.user.id },
+      include: { user: true },
+    });
+
+    if (!patient) {
+      return res.status(404).json({ success: false, message: 'Patient profile not found.' });
+    }
+
+    if (!doctorId) {
+      return res.status(400).json({ success: false, message: 'Doctor ID is required.' });
+    }
+
+    const doctor = await prisma.doctor.findUnique({
+      where: { id: doctorId },
+      include: { user: true, hospital: true },
+    });
+
+    if (!doctor) {
+      return res.status(404).json({ success: false, message: 'Doctor not found.' });
+    }
+
+    const assignedHospitalId = hospitalId || doctor.hospitalId;
+    if (!assignedHospitalId) {
+      return res.status(400).json({ success: false, message: 'Hospital ID is required.' });
+    }
+
+    // Determine target slot date and start time
+    let targetDateStr = '';
+    let targetStartTime = timeSlot;
+
+    if (appointmentDate) {
+      targetDateStr = new Date(appointmentDate).toISOString().split('T')[0];
+    }
+
+    // Execute atomic transaction for double-booking prevention and automatic queue registration
+    const result = await prisma.$transaction(async (tx) => {
+      // 1. Locate available slot
+      let slotRecord = null;
+
+      if (slotId) {
+        const matchingSlots = await tx.$queryRawUnsafe(
+          `SELECT * FROM DoctorAvailability WHERE id = ?`,
+          slotId
+        );
+        slotRecord = matchingSlots[0];
+      } else if (targetDateStr && targetStartTime) {
+        const matchingSlots = await tx.$queryRawUnsafe(
+          `SELECT * FROM DoctorAvailability 
+           WHERE doctorId = ? 
+             AND COALESCE(date(slotDate/1000, 'unixepoch'), date(slotDate)) = ? 
+             AND startTime = ?`,
+          doctorId,
+          targetDateStr,
+          targetStartTime
+        );
+        slotRecord = matchingSlots[0];
+      }
+
+      if (!slotRecord) {
+        throw new Error('SLOT_NOT_FOUND');
+      }
+
+      if (slotRecord.status !== 'AVAILABLE') {
+        throw new Error('SLOT_ALREADY_BOOKED');
+      }
+
+      const slotDateIso = new Date(slotRecord.slotDate).toISOString().split('T')[0];
+      targetStartTime = slotRecord.startTime;
+
+      // 2. Atomically reserve slot - status AVAILABLE -> BOOKED
+      const updatedRows = await tx.$executeRawUnsafe(
+        `UPDATE DoctorAvailability 
+         SET status = 'BOOKED', updatedAt = CURRENT_TIMESTAMP 
+         WHERE id = ? AND status = 'AVAILABLE'`,
+        slotRecord.id
+      );
+
+      if (updatedRows === 0) {
+        // Concurrently claimed by another transaction
+        throw new Error('SLOT_ALREADY_BOOKED');
+      }
+
+      // 3. Compute next queue number scoped to (doctorId, slotDate)
+      const maxQueueResult = await tx.$queryRawUnsafe(
+        `SELECT MAX(queueNumber) as maxNum 
+         FROM DoctorQueue 
+         WHERE doctorId = ? AND COALESCE(date(queueDate/1000, 'unixepoch'), date(queueDate)) = ?`,
+        doctorId,
+        slotDateIso
+      );
+
+      const currentMax = Number(maxQueueResult[0]?.maxNum || 0);
+      const queueNumber = currentMax + 1;
+      const tokenNumber = `T-${String(queueNumber).padStart(2, '0')}`;
+
+      // 4. Create Appointment record
+      const appointment = await tx.appointment.create({
+        data: {
+          patientId: patient.id,
+          doctorId,
+          hospitalId: assignedHospitalId,
+          appointmentDate: new Date(slotRecord.slotDate),
+          timeSlot: slotRecord.startTime,
+          reason: reason || 'General Consultation',
+          status: 'CONFIRMED',
+          notes: JSON.stringify({ queueNumber, tokenNumber }),
+        },
+        include: {
+          doctor: { include: { user: true } },
+          hospital: true,
+        },
+      });
+
+      // Update queueNumber and tokenNumber directly in Appointment table
+      try {
+        await tx.$executeRawUnsafe(
+          `UPDATE Appointment SET queueNumber = ?, tokenNumber = ? WHERE id = ?`,
+          queueNumber,
+          tokenNumber,
+          appointment.id
+        );
+      } catch (err) {}
+
+      // 5. Link appointmentId on DoctorAvailability
+      await tx.$executeRawUnsafe(
+        `UPDATE DoctorAvailability SET appointmentId = ? WHERE id = ?`,
+        appointment.id,
+        slotRecord.id
+      );
+
+      // 6. Insert DoctorQueue record
+      const crypto = require('crypto');
+      const queueEntryId = crypto.randomUUID();
+
+      await tx.$executeRawUnsafe(
+        `INSERT INTO DoctorQueue 
+         (id, appointmentId, doctorId, patientId, hospitalId, queueDate, queueNumber, tokenNumber, status, createdAt, updatedAt)
+         VALUES (?, ?, ?, ?, ?, ?, ?, ?, 'BOOKED', CURRENT_TIMESTAMP, CURRENT_TIMESTAMP)`,
+        queueEntryId,
+        appointment.id,
+        doctorId,
+        patient.id,
+        assignedHospitalId,
+        new Date(slotRecord.slotDate).toISOString(),
+        queueNumber,
+        tokenNumber
+      );
+
+      // 7. Notification for Patient
+      await tx.notification.create({
+        data: {
+          userId: req.user.id,
+          type: 'APPOINTMENT_CONFIRMED',
+          title: 'Appointment Booked Successfully',
+          message: `Your appointment with Dr. ${doctor.user?.fullName || 'Doctor'} on ${slotDateIso} at ${slotRecord.startTime} is confirmed. Queue Token: ${tokenNumber}.`,
+        },
+      }).catch(() => {});
+
+      // 8. Notification for Doctor
+      if (doctor.userId) {
+        await tx.notification.create({
+          data: {
+            userId: doctor.userId,
+            type: 'NEW_APPOINTMENT',
+            title: 'New Patient Appointment',
+            message: `New booking for ${slotDateIso} at ${slotRecord.startTime}. Patient: ${patient.user?.fullName || 'Patient'}, Token: ${tokenNumber}.`,
+          },
+        }).catch(() => {});
+      }
+
+      // 9. Audit Log
+      await tx.auditLog.create({
+        data: {
+          user: { connect: { id: req.user.id } },
+          action: 'BOOK_APPOINTMENT',
+          resource: 'Appointment',
+          details: `Patient booked token ${tokenNumber} with Dr. ${doctor.user?.fullName}`,
+        },
+      }).catch(() => {});
+
+      return {
+        appointment,
+        queueNumber,
+        tokenNumber,
+        slotDate: slotDateIso,
+        startTime: slotRecord.startTime,
+      };
+    });
+
+    res.status(201).json({
+      success: true,
+      message: 'Appointment booked successfully.',
+      appointment: result.appointment,
+      queueNumber: result.queueNumber,
+      tokenNumber: result.tokenNumber,
+      slotDate: result.slotDate,
+      timeSlot: result.startTime,
+    });
+  } catch (error) {
+    if (error.message === 'SLOT_ALREADY_BOOKED') {
+      return res.status(409).json({
+        success: false,
+        message: 'This appointment slot is no longer available. Please select another slot.',
+      });
+    }
+    if (error.message === 'SLOT_NOT_FOUND') {
+      return res.status(404).json({
+        success: false,
+        message: 'The requested appointment slot does not exist.',
+      });
+    }
+    next(error);
+  }
+};
+
+// Cancel Appointment & release slot and queue
 const cancelAppointment = async (req, res, next) => {
   try {
     const { appointmentId } = req.params;
 
-    const updated = await prisma.appointment.update({
-      where: { id: appointmentId },
-      data: { status: 'CANCELLED' },
+    const patient = await prisma.patient.findUnique({
+      where: { userId: req.user.id },
+      include: { user: true },
     });
 
-    res.status(200).json({ success: true, message: 'Appointment cancelled.', appointment: updated });
+    if (!patient) {
+      return res.status(404).json({ success: false, message: 'Patient profile not found.' });
+    }
+
+    const appointment = await prisma.appointment.findUnique({
+      where: { id: appointmentId },
+      include: {
+        doctor: { include: { user: true } },
+        hospital: true,
+      },
+    });
+
+    if (!appointment) {
+      return res.status(404).json({ success: false, message: 'Appointment not found.' });
+    }
+
+    if (appointment.patientId !== patient.id) {
+      return res.status(403).json({ success: false, message: 'You are not authorized to cancel this appointment.' });
+    }
+
+    if (appointment.status === 'CANCELLED') {
+      return res.status(400).json({ success: false, message: 'This appointment is already cancelled.' });
+    }
+
+    if (appointment.status === 'COMPLETED') {
+      return res.status(400).json({ success: false, message: 'Completed appointments cannot be cancelled.' });
+    }
+
+    // Execute atomic cancellation
+    await prisma.$transaction(async (tx) => {
+      // 1. Update appointment status
+      await tx.appointment.update({
+        where: { id: appointmentId },
+        data: { status: 'CANCELLED' },
+      });
+
+      // 2. Update DoctorQueue status
+      await tx.$executeRawUnsafe(
+        `UPDATE DoctorQueue 
+         SET status = 'CANCELLED', updatedAt = CURRENT_TIMESTAMP 
+         WHERE appointmentId = ?`,
+        appointmentId
+      );
+
+      // 3. Release DoctorAvailability slot back to AVAILABLE (if future slot)
+      await tx.$executeRawUnsafe(
+        `UPDATE DoctorAvailability 
+         SET status = 'AVAILABLE', appointmentId = NULL, updatedAt = CURRENT_TIMESTAMP 
+         WHERE appointmentId = ?`,
+        appointmentId
+      );
+
+      // 4. Notification to Patient
+      await tx.notification.create({
+        data: {
+          userId: req.user.id,
+          type: 'APPOINTMENT_CANCELLED',
+          title: 'Appointment Cancelled',
+          message: `Your appointment with Dr. ${appointment.doctor?.user?.fullName || 'Doctor'} has been cancelled.`,
+        },
+      }).catch(() => {});
+
+      // 5. Notification to Doctor
+      if (appointment.doctor?.userId) {
+        await tx.notification.create({
+          data: {
+            userId: appointment.doctor.userId,
+            type: 'APPOINTMENT_CANCELLED',
+            title: 'Patient Cancelled Appointment',
+            message: `Appointment for ${new Date(appointment.appointmentDate).toISOString().split('T')[0]} at ${appointment.timeSlot} was cancelled by ${patient.user?.fullName || 'Patient'}.`,
+          },
+        }).catch(() => {});
+      }
+
+      // 6. Audit Log
+      await tx.auditLog.create({
+        data: {
+          user: { connect: { id: req.user.id } },
+          action: 'CANCEL_APPOINTMENT',
+          resource: 'Appointment',
+          details: `Patient cancelled appointment with Dr. ${appointment.doctor?.user?.fullName}`,
+        },
+      }).catch(() => {});
+    });
+
+    res.status(200).json({
+      success: true,
+      message: 'Appointment cancelled successfully and slot released.',
+    });
   } catch (error) {
     next(error);
   }
@@ -1860,6 +2227,7 @@ module.exports = {
   getPatientProfile,
   getUnifiedTimeline,
   getPatientAiOverview,
+  getPatientAppointments,
   bookAppointment,
   cancelAppointment,
   updatePatientProfile,

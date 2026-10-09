@@ -6,6 +6,7 @@ const rbacMiddleware = require('../middleware/rbacMiddleware');
 
 router.use(authMiddleware);
 
+router.get('/', hospitalController.getAllHospitals);
 router.get('/metrics', rbacMiddleware('HOSPITAL_ADMIN', 'SUPER_ADMIN'), hospitalController.getHospitalMetrics);
 router.post('/doctors', rbacMiddleware('HOSPITAL_ADMIN', 'SUPER_ADMIN'), hospitalController.createDoctor);
 

@@ -37,6 +37,9 @@ export default function PatientAccessLockModal({
   onRequestOtp,
   onVerifyOtp,
   onOpenConsultation,
+  isRequestingOtp = false,
+  isVerifyingOtp = false,
+  activeOtpHint = null,
 }) {
   const [enteredOtp, setEnteredOtp] = useState("");
   const [otpError, setOtpError] = useState("");
@@ -62,15 +65,19 @@ export default function PatientAccessLockModal({
     return "pending";
   };
 
-  const handleVerifyOtp = () => {
-    if (!enteredOtp || enteredOtp.trim().length < 4) {
-      setOtpError("Please enter a valid OTP.");
+  const handleVerifyOtp = async () => {
+    if (!enteredOtp || enteredOtp.trim().length !== 6) {
+      setOtpError("Please enter the complete 6-digit OTP.");
       return;
     }
     setOtpError("");
-    const success = onVerifyOtp ? onVerifyOtp(patient, enteredOtp) : true;
-    if (!success && success !== undefined) {
-      setOtpError("Invalid OTP. Try the demo code: 847291");
+    if (onVerifyOtp) {
+      const res = await onVerifyOtp(patient, enteredOtp);
+      if (res && res.success === false) {
+        setOtpError(res.message || "Invalid OTP. Please check with the patient.");
+      } else if (res === false) {
+        setOtpError("Invalid OTP. Please check with the patient.");
+      }
     }
   };
 
@@ -114,11 +121,21 @@ export default function PatientAccessLockModal({
               {patient.token}
             </div>
             <div>
-              <div style={{ fontWeight: 700, fontSize: "1rem", color: "var(--color-ink)" }}>
+              <div style={{ fontWeight: 700, fontSize: "1.05rem", color: "var(--color-ink)" }}>
                 {patient.patientName || patient.name}
               </div>
-              <div className="type-micro" style={{ color: "var(--color-ink-secondary)" }}>
-                {patient.age}Y · {patient.gender} · {patient.patientId || "ID: P-10042"}
+              <div style={{ display: "flex", alignItems: "center", gap: "0.5rem", flexWrap: "wrap", marginTop: "2px" }}>
+                <span className="type-micro" style={{ color: "var(--color-ink-secondary)" }}>
+                  {patient.age}Y · {patient.gender}
+                </span>
+                <span style={{ color: "var(--color-border-deep)" }}>•</span>
+                <span className="type-micro" style={{ color: "var(--color-ink-secondary)" }}>
+                  Patient ID: <strong style={{ color: "var(--color-ink)" }}>{patient.patientId || patient.uhisId || "P-10042"}</strong>
+                </span>
+                <span style={{ color: "var(--color-border-deep)" }}>•</span>
+                <span className="type-micro" style={{ color: "var(--color-accent-primary)", fontWeight: 700 }}>
+                  ABHA: {patient.abhaId || "N/A"}
+                </span>
               </div>
             </div>
           </div>
@@ -409,7 +426,7 @@ export default function PatientAccessLockModal({
           {isWaiting && (
             <div>
               <div className="type-micro" style={{ marginBottom: "0.5rem", color: "var(--color-ink-secondary)" }}>
-                Step 1: Patient is in the waiting area. Call patient to the consultation chamber.
+                Step 1: Patient is in the waiting area. You can call the patient to chamber or request consent authorization records.
               </div>
               <div style={{ display: "flex", gap: "0.75rem", flexWrap: "wrap" }}>
                 <Button
@@ -417,6 +434,14 @@ export default function PatientAccessLockModal({
                   style={{ display: "flex", alignItems: "center", gap: "0.45rem" }}
                 >
                   <PhoneCall size={14} /> CALL PATIENT TO CHAMBER
+                </Button>
+                <Button
+                  variant="primary"
+                  onClick={() => onRequestOtp && onRequestOtp(patient)}
+                  disabled={isRequestingOtp}
+                  style={{ display: "flex", alignItems: "center", gap: "0.45rem" }}
+                >
+                  <KeyRound size={14} /> {isRequestingOtp ? "REQUESTING RECORDS..." : "REQUEST MEDICAL RECORDS"}
                 </Button>
                 <Button variant="secondary" onClick={onClose}>
                   BACK TO QUEUE
@@ -429,7 +454,7 @@ export default function PatientAccessLockModal({
           {isCalled && (
             <div>
               <div className="type-micro" style={{ marginBottom: "0.5rem", color: "var(--color-ink-secondary)" }}>
-                Step 2: Patient has been called. When the patient enters the chamber, mark them as present.
+                Step 2: Patient has been called. When the patient enters the chamber, mark present or initiate access request.
               </div>
               <div style={{ display: "flex", gap: "0.75rem", flexWrap: "wrap" }}>
                 <Button
@@ -439,11 +464,12 @@ export default function PatientAccessLockModal({
                   <UserCheck size={14} /> PATIENT IS IN CHAMBER (MARK PRESENT)
                 </Button>
                 <Button
-                  variant="secondary"
-                  onClick={() => onCallPatient && onCallPatient(patient)}
+                  variant="primary"
+                  onClick={() => onRequestOtp && onRequestOtp(patient)}
+                  disabled={isRequestingOtp}
                   style={{ display: "flex", alignItems: "center", gap: "0.45rem" }}
                 >
-                  <PhoneCall size={14} /> CALL AGAIN
+                  <KeyRound size={14} /> {isRequestingOtp ? "REQUESTING RECORDS..." : "REQUEST MEDICAL RECORDS"}
                 </Button>
                 <Button variant="secondary" onClick={onClose}>
                   BACK TO QUEUE
@@ -456,14 +482,15 @@ export default function PatientAccessLockModal({
           {isPatientPresent && (
             <div>
               <div className="type-micro" style={{ marginBottom: "0.5rem", color: "var(--color-ink-secondary)" }}>
-                Step 3: Patient is in front of the doctor. Request temporary access authorization OTP to unlock medical records.
+                Step 3: Patient is in front of the doctor. Send medical record access authorization request to the patient.
               </div>
               <div style={{ display: "flex", gap: "0.75rem", flexWrap: "wrap" }}>
                 <Button
                   onClick={() => onRequestOtp && onRequestOtp(patient)}
+                  disabled={isRequestingOtp}
                   style={{ display: "flex", alignItems: "center", gap: "0.45rem" }}
                 >
-                  <KeyRound size={14} /> REQUEST ACCESS OTP →
+                  <KeyRound size={14} /> {isRequestingOtp ? "SENDING REQUEST..." : "REQUEST MEDICAL RECORDS →"}
                 </Button>
                 <Button variant="secondary" onClick={onClose}>
                   BACK TO QUEUE
@@ -475,22 +502,58 @@ export default function PatientAccessLockModal({
           {/* State 4: OTP PENDING */}
           {isOtpPending && (
             <div style={{ background: "var(--color-surface)", padding: "1rem", borderRadius: "8px", border: "1px solid var(--color-border)" }}>
-              <div className="type-label" style={{ marginBottom: "0.4rem", color: "var(--color-ink)" }}>
-                PATIENT ACCESS OTP VERIFICATION
+              <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: "0.4rem" }}>
+                <div className="type-label" style={{ color: "var(--color-ink)", fontWeight: 700 }}>
+                  PATIENT ACCESS OTP VERIFICATION
+                </div>
+                <div style={{ display: "flex", alignItems: "center", gap: "4px", color: "var(--color-signal-warning)", fontSize: "0.72rem", fontWeight: 600 }}>
+                  <Clock size={12} />
+                  <span>Valid for 5 minutes</span>
+                </div>
               </div>
-              <div className="type-micro" style={{ marginBottom: "0.75rem", color: "var(--color-ink-secondary)" }}>
-                Enter the 6-digit consent OTP sent to the patient's registered phone.
-                <span style={{ marginLeft: "6px", fontWeight: 700, color: "var(--color-accent-primary)" }}>
-                  (Demo Code: 847291)
-                </span>
+
+              <div className="type-micro" style={{ marginBottom: "0.75rem", color: "var(--color-ink-secondary)", lineHeight: 1.5 }}>
+                Consent request is active on patient's account. Ask the patient for the 6-digit OTP received on their ABDM profile / phone.
               </div>
+
+              {activeOtpHint && (
+                <div
+                  style={{
+                    background: "var(--color-signal-info-bg)",
+                    border: "1px solid var(--color-signal-info-border)",
+                    borderRadius: "6px",
+                    padding: "0.55rem 0.85rem",
+                    marginBottom: "0.85rem",
+                    display: "flex",
+                    alignItems: "center",
+                    justifyContent: "space-between",
+                    gap: "0.5rem",
+                  }}
+                >
+                  <div style={{ display: "flex", alignItems: "center", gap: "0.5rem", fontSize: "0.78rem", color: "var(--color-signal-info)" }}>
+                    <CheckCircle2 size={14} />
+                    <span>Patient approved consent. OTP: <strong style={{ letterSpacing: "0.1em", fontSize: "0.95rem" }}>{activeOtpHint}</strong></span>
+                  </div>
+                  <Button
+                    size="sm"
+                    variant="secondary"
+                    onClick={() => {
+                      setEnteredOtp(activeOtpHint);
+                      setOtpError("");
+                    }}
+                    style={{ fontSize: "0.7rem", padding: "0.15rem 0.5rem" }}
+                  >
+                    Use OTP
+                  </Button>
+                </div>
+              )}
 
               <div style={{ display: "flex", gap: "0.75rem", alignItems: "flex-start", flexWrap: "wrap" }}>
                 <div style={{ flex: "1 1 200px" }}>
                   <input
                     type="text"
                     maxLength={6}
-                    placeholder="e.g. 847291"
+                    placeholder="Enter 6-digit OTP"
                     className="precision-input"
                     value={enteredOtp}
                     onChange={(e) => {
@@ -506,20 +569,25 @@ export default function PatientAccessLockModal({
                     }}
                   />
                   {otpError && (
-                    <div style={{ color: "var(--color-signal-critical)", fontSize: "0.75rem", marginTop: "4px" }}>
+                    <div style={{ color: "var(--color-signal-critical)", fontSize: "0.75rem", marginTop: "4px", fontWeight: 600 }}>
                       {otpError}
                     </div>
                   )}
                 </div>
 
-                <Button onClick={handleVerifyOtp} style={{ display: "flex", alignItems: "center", gap: "0.45rem" }}>
-                  <ShieldCheck size={14} /> VERIFY & GRANT ACCESS
+                <Button
+                  onClick={handleVerifyOtp}
+                  disabled={isVerifyingOtp || enteredOtp.length !== 6}
+                  style={{ display: "flex", alignItems: "center", gap: "0.45rem" }}
+                >
+                  <ShieldCheck size={14} /> {isVerifyingOtp ? "VERIFYING OTP..." : "VERIFY & GRANT ACCESS"}
                 </Button>
                 <Button
                   variant="secondary"
+                  disabled={isRequestingOtp}
                   onClick={() => onRequestOtp && onRequestOtp(patient)}
                 >
-                  RESEND OTP
+                  {isRequestingOtp ? "RESENDING..." : "RESEND OTP"}
                 </Button>
               </div>
             </div>

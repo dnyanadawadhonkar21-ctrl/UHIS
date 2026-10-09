@@ -12,6 +12,10 @@ export default function ConsultationWorkspace({
   onGoToQueue,
   onCompleteConsultation,
   onReauthorize,
+  session,
+  sessionSecondsLeft,
+  onEndAccess,
+  authorizedRecords,
 }) {
   const toast = useToast();
   const [savedPrescriptions, setSavedPrescriptions] = useState([]);
@@ -53,6 +57,9 @@ export default function ConsultationWorkspace({
         patient={patient}
         onCompleteConsultation={onCompleteConsultation}
         onBackToQueue={onGoToQueue}
+        session={session}
+        sessionSecondsLeft={sessionSecondsLeft}
+        onEndAccess={onEndAccess}
       />
 
       {/* Main Workspace: 2-Column Responsive Layout */}
@@ -70,6 +77,7 @@ export default function ConsultationWorkspace({
           <PatientMedicalRecordView
             patient={patient}
             savedPrescriptions={savedPrescriptions}
+            authorizedRecords={authorizedRecords}
           />
         </div>
 

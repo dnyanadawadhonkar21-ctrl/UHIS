@@ -45,6 +45,8 @@ model Hospital {
   doctors     Doctor[]
   appointments Appointment[]
   billings    Billing[]
+  availabilities DoctorAvailability[]
+  queueEntries   DoctorQueue[]
 }
 
 model Department {
@@ -84,6 +86,8 @@ model Doctor {
   emergencyAccessRequests EmergencyAccessRequest[]
   medicalAccessRequests   MedicalAccessRequest[]
   medicalAccessSessions   MedicalAccessSession[]
+  availabilities          DoctorAvailability[]
+  queueEntries            DoctorQueue[]
 }
 
 model Patient {
@@ -118,6 +122,7 @@ model Patient {
   emergencyAccessRequests EmergencyAccessRequest[]
   medicalAccessRequests   MedicalAccessRequest[]
   medicalAccessSessions   MedicalAccessSession[]
+  queueEntries            DoctorQueue[]
 }
 
 model Appointment {
@@ -130,6 +135,8 @@ model Appointment {
   reason          String?
   status          String   @default("PENDING") // PENDING, CONFIRMED, CANCELLED, COMPLETED
   notes           String?
+  queueNumber     Int?
+  tokenNumber     String?
   createdAt       DateTime @default(now())
   updatedAt       DateTime @updatedAt
 
@@ -138,6 +145,8 @@ model Appointment {
   hospital        Hospital @relation(fields: [hospitalId], references: [id])
   
   prescriptions   Prescription[]
+  queueEntry      DoctorQueue?
+  availability    DoctorAvailability?
 }
 
 model Prescription {
@@ -386,10 +395,57 @@ model MedicalAccessSession {
   patientId       String
   startedAt       DateTime             @default(now())
   expiresAt       DateTime
+  endedAt         DateTime?
   status          String               @default("ACTIVE") // ACTIVE, EXPIRED, REVOKED, COMPLETED
+  revocationReason String?
   createdAt       DateTime             @default(now())
 
   accessRequest   MedicalAccessRequest @relation(fields: [accessRequestId], references: [id], onDelete: Cascade)
   doctor          Doctor               @relation(fields: [doctorId], references: [id], onDelete: Cascade)
   patient         Patient              @relation(fields: [patientId], references: [id], onDelete: Cascade)
+}
+
+model DoctorAvailability {
+  id              String       @id @default(uuid())
+  doctorId        String
+  hospitalId      String
+  slotDate        DateTime
+  startTime       String       // e.g. "09:00 AM"
+  endTime         String       // e.g. "09:30 AM"
+  slotDuration    Int          @default(30)
+  status          String       @default("AVAILABLE") // AVAILABLE, BOOKED, UNAVAILABLE, CANCELLED
+  appointmentId   String?      @unique
+  createdAt       DateTime     @default(now())
+  updatedAt       DateTime     @updatedAt
+
+  doctor          Doctor       @relation(fields: [doctorId], references: [id], onDelete: Cascade)
+  hospital        Hospital     @relation(fields: [hospitalId], references: [id], onDelete: Cascade)
+  appointment     Appointment? @relation(fields: [appointmentId], references: [id], onDelete: SetNull)
+
+  @@unique([doctorId, hospitalId, slotDate, startTime])
+}
+
+model DoctorQueue {
+  id              String       @id @default(uuid())
+  appointmentId   String       @unique
+  doctorId        String
+  patientId       String
+  hospitalId      String
+  queueDate       DateTime
+  queueNumber     Int
+  tokenNumber     String       // e.g. "T-01"
+  status          String       @default("BOOKED") // BOOKED, CHECKED_IN, WAITING, IN_CONSULTATION, COMPLETED, CANCELLED, NO_SHOW
+  checkInTime     DateTime?
+  calledAt        DateTime?
+  consultedAt     DateTime?
+  notes           String?
+  createdAt       DateTime     @default(now())
+  updatedAt       DateTime     @updatedAt
+
+  appointment     Appointment  @relation(fields: [appointmentId], references: [id], onDelete: Cascade)
+  doctor          Doctor       @relation(fields: [doctorId], references: [id], onDelete: Cascade)
+  patient         Patient      @relation(fields: [patientId], references: [id], onDelete: Cascade)
+  hospital        Hospital     @relation(fields: [hospitalId], references: [id], onDelete: Cascade)
+
+  @@unique([doctorId, queueDate, queueNumber])
 }
