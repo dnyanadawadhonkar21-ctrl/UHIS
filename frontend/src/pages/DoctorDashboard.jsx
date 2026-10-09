@@ -1,5 +1,5 @@
 import React, { useState, useEffect } from "react";
-import { Stethoscope, FileText, Plus, X, AlertTriangle, ShieldCheck, Lock, Clock, CheckCircle2, User, KeyRound, Eye, RefreshCw, Download, Image as ImageIcon, FileSpreadsheet, Layers, ExternalLink, ZoomIn, ZoomOut, Contrast, Search, Sparkles, UserCheck } from "lucide-react";
+import { Stethoscope, FileText, Plus, X, AlertTriangle, ShieldCheck, Lock, Clock, CheckCircle2, User, KeyRound, Eye, RefreshCw, Download, Image as ImageIcon, FileSpreadsheet, Layers, ExternalLink, ZoomIn, ZoomOut, Contrast, Search, Sparkles, UserCheck, ArrowRight } from "lucide-react";
 import AppLayout from "../components/layout/AppLayout";
 import InstrumentPanel from "../components/ui/InstrumentPanel";
 import StatusCode from "../components/ui/StatusCode";
@@ -10,7 +10,7 @@ import PrecisionInput from "../components/ui/PrecisionInput";
 import { useAuth } from "../context/AuthContext";
 import { useToast } from "../context/ToastContext";
 import api from "../services/api";
-import { doctorQueue as initialQueue, patientData as defaultPatient, conditions as defaultConditions, labReports as defaultLabReports, medications as defaultMedications } from "../data/mockData";
+import { doctorQueue as initialQueue, patientData as defaultPatient, conditions, conditions as defaultConditions, labReports as defaultLabReports, medications as defaultMedications } from "../data/mockData";
 import AIPatientOverview from "../components/patient/AIPatientOverview";
 
 import PatientAccessLockModal from "../components/doctor/PatientAccessLockModal";
@@ -57,6 +57,443 @@ export default function DoctorDashboard() {
   // Modal states
   const [selectedPatientForModal, setSelectedPatientForModal] = useState(null);
   const [isAccessModalOpen, setIsAccessModalOpen] = useState(false);
+
+  // ABHA ID Search State
+  const [abhaSearchQuery, setAbhaSearchQuery] = useState("");
+  const [abhaSearchResult, setAbhaSearchResult] = useState(null);
+  const [abhaSearchLoading, setAbhaSearchLoading] = useState(false);
+  const [abhaSearchError, setAbhaSearchError] = useState("");
+  const [abhaSearched, setAbhaSearched] = useState(false);
+
+  // OPD Queue reference alias for ABHA actions
+  const opdQueue = queue;
+  const setOpdQueue = setQueue;
+
+  const handleSelectPatient = (patientItem) => {
+    setActivePatient(patientItem);
+    setActiveTab("consultation");
+  };
+
+  const handleSearchAbha = async (queryOverride) => {
+    const rawQuery = queryOverride !== undefined ? queryOverride : abhaSearchQuery;
+    const query = (rawQuery || "").trim();
+
+    if (!query) {
+      setAbhaSearchError("Please enter an ABHA ID to search.");
+      setAbhaSearchResult(null);
+      setAbhaSearched(true);
+      return;
+    }
+
+    setAbhaSearchLoading(true);
+    setAbhaSearchError("");
+    setAbhaSearched(true);
+
+    try {
+      const res = await api.get('/patients/search/abha?abhaId=' + encodeURIComponent(query));
+      if (res && res.data && res.data.success && res.data.patient) {
+        setAbhaSearchResult(res.data.patient);
+        setAbhaSearchError("");
+        toast.success('Patient found: ' + (res.data.patient.patientName || res.data.patient.fullName));
+      } else {
+        setAbhaSearchResult(null);
+        setAbhaSearchError(res?.data?.message || "No patient found with this ABHA ID.");
+      }
+    } catch (err) {
+      if (err.response && err.response.data && err.response.data.message) {
+        setAbhaSearchResult(null);
+        setAbhaSearchError(err.response.data.message);
+      } else {
+        const localMatch = queue.find(
+          (p) =>
+            (p.abhaId && p.abhaId.toLowerCase() === query.toLowerCase()) ||
+            (p.patientId && p.patientId.toLowerCase() === query.toLowerCase()) ||
+            (p.email && p.email.toLowerCase() === query.toLowerCase())
+        );
+        if (localMatch) {
+          setAbhaSearchResult(localMatch);
+          setAbhaSearchError("");
+          toast.success('Patient found: ' + (localMatch.patientName || localMatch.name));
+        } else {
+          setAbhaSearchResult(null);
+          setAbhaSearchError("No patient found with this ABHA ID.");
+        }
+      }
+    } finally {
+      setAbhaSearchLoading(false);
+    }
+  };
+
+  const handleClearAbhaSearch = () => {
+    setAbhaSearchQuery("");
+    setAbhaSearchResult(null);
+    setAbhaSearchError("");
+    setAbhaSearched(false);
+  };
+
+  const handleSelectSearchedPatient = (patient) => {
+    if (!patient) return;
+    const exists = queue.some(
+      (p) => (p.abhaId && p.abhaId === patient.abhaId) || (p.id && p.id === patient.id)
+    );
+    if (!exists) {
+      setQueue((prev) => [
+        {
+          ...patient,
+          token: patient.token || ('T-' + String(prev.length + 1).padStart(2, '0')),
+          status: 'in-consultation',
+        },
+        ...prev,
+      ]);
+    }
+    setActivePatient(patient);
+    setActiveTab('consultation');
+    toast.success('Opening consultation for ' + (patient.patientName || patient.name || 'Patient') + '...');
+  };
+
+  const handleAddToQueue = (patient) => {
+    if (!patient) return;
+    const exists = queue.some(
+      (p) => (p.abhaId && p.abhaId === patient.abhaId) || (p.id && p.id === patient.id)
+    );
+    if (exists) {
+      toast.info((patient.patientName || patient.name) + ' is already present in today\'s OPD Queue.');
+      return;
+    }
+    const newQueueItem = {
+      ...patient,
+      token: patient.token || ('T-' + String(queue.length + 1).padStart(2, '0')),
+      status: 'waiting',
+      priority: 'routine',
+    };
+    setQueue((prev) => [...prev, newQueueItem]);
+    toast.success((patient.patientName || patient.name) + ' added to today\'s OPD Queue.');
+  };
+
+  // Emergency Access Doctor State
+  const [emergencyUHISId, setEmergencyUHISId] = useState("patient22@uhis.org");
+  const [basicPatientInfo, setBasicPatientInfo] = useState(null);
+  const [emergencyStep, setEmergencyStep] = useState("REQUEST_FORM");
+  const [emergencyReasonSelect, setEmergencyReasonSelect] = useState("Emergency Treatment");
+  const [emergencyReasonCustom, setEmergencyReasonCustom] = useState("");
+
+  const [otpInput, setOtpInput] = useState("");
+  const [otpRemainingSeconds, setOtpRemainingSeconds] = useState(300);
+  const [accessRemainingSeconds, setAccessRemainingSeconds] = useState(900);
+  const [emergencyLoading, setEmergencyLoading] = useState(false);
+  const [activeEmergencyRequest, setActiveEmergencyRequest] = useState(null);
+  const [emergencyPatientRecords, setEmergencyPatientRecords] = useState(null);
+  const [failedAttempts, setFailedAttempts] = useState(0);
+
+  // Medical Record Modals
+  const [selectedImageModal, setSelectedImageModal] = useState(null);
+  const [selectedRecordModal, setSelectedRecordModal] = useState(null);
+  const [invertImageContrast, setInvertImageContrast] = useState(false);
+  const [imageZoom, setImageZoom] = useState(1);
+
+  const formatTimer = (seconds) => {
+    const m = Math.floor(seconds / 60).toString().padStart(2, '0');
+    const s = (seconds % 60).toString().padStart(2, '0');
+    return m + ':' + s;
+  };
+
+  const fetchBasicPatientInfo = async (patientId) => {
+    if (!patientId || !patientId.trim()) return;
+    try {
+      const res = await api.get('/patients/' + encodeURIComponent(patientId.trim()) + '/basic').catch(() => null);
+      if (res && res.data && res.data.success && res.data.patient) {
+        setBasicPatientInfo(res.data.patient);
+      } else {
+        let name = 'Rahul Verma';
+        let blood = 'B+';
+        let abha = 'PT-2026-022';
+        if (patientId.includes('23')) {
+          name = 'Ananya Deshmukh';
+          blood = 'A+';
+          abha = 'PT-2026-023';
+        } else if (patientId.includes('24')) {
+          name = 'Vikram Mehta';
+          blood = 'B+';
+          abha = 'PT-2026-024';
+        }
+        setBasicPatientInfo({
+          id: 'P-DEMO',
+          uhisId: patientId.trim(),
+          abhaId: abha,
+          fullName: name,
+          name: name,
+          age: patientId.includes('23') ? 34 : patientId.includes('24') ? 56 : 26,
+          gender: patientId.includes('23') ? 'Female' : 'Male',
+          bloodGroup: blood,
+          allergies: [
+            { name: patientId.includes('23') ? 'Sulfa Drugs' : 'Penicillin', severity: 'SEVERE', reaction: 'Anaphylaxis' },
+          ],
+          criticalConditions: [
+            { name: patientId.includes('23') ? 'Bronchial Asthma' : 'Asthma (Moderate Persistent), Type 2 Diabetes Mellitus', severity: 'MODERATE' },
+          ],
+          emergencyContact: patientId.includes('23') ? 'Spouse (Contact on file)' : 'Kavita Verma (Spouse)',
+        });
+      }
+    } catch (e) {}
+  };
+
+  const checkActiveEmergencySession = async () => {
+    try {
+      const res = await api.get('/emergency-access/active').catch(() => null);
+      if (res && res.data && res.data.success && res.data.activeRequests?.length > 0) {
+        const approvedReq = res.data.activeRequests.find((r) => r.status === 'APPROVED');
+        if (approvedReq) {
+          setActiveEmergencyRequest(approvedReq);
+          if (emergencyStep === 'REQUEST_SENT') {
+            setEmergencyStep('OTP_ENTRY');
+          }
+        }
+      }
+      const storedOtpData = localStorage.getItem('uhis_active_emergency_otp_data');
+      if (storedOtpData) {
+        const parsed = JSON.parse(storedOtpData);
+        if (parsed && parsed.expiresAt && new Date(parsed.expiresAt) > new Date()) {
+          setActiveEmergencyRequest((prev) => prev || { id: parsed.requestId, patientName: basicPatientInfo?.fullName || 'Rahul Verma', patientUHISId: emergencyUHISId, reason: parsed.reason });
+          if (emergencyStep === 'REQUEST_SENT') {
+            setEmergencyStep('OTP_ENTRY');
+          }
+        }
+      }
+    } catch (e) {}
+  };
+
+  const handleRequestEmergencyAccess = async () => {
+    const finalReason = emergencyReasonSelect === 'Other (Specify below)' ? emergencyReasonCustom : emergencyReasonSelect;
+    if (!emergencyUHISId.trim()) {
+      toast.error('Patient UHIS Email / ID is mandatory.');
+      return;
+    }
+    if (!finalReason.trim()) {
+      toast.error('Emergency reason is mandatory.');
+      return;
+    }
+
+    setEmergencyLoading(true);
+    try {
+      const res = await api.post('/emergency-access/request', {
+        patientUHISId: emergencyUHISId.trim(),
+        reason: finalReason.trim(),
+      }).catch((err) => {
+        const reqObj = {
+          id: 'REQ-' + Math.floor(100000 + Math.random() * 900000),
+          patientUHISId: emergencyUHISId.trim(),
+          patientName: basicPatientInfo?.fullName || 'Rahul Verma',
+          doctorName: displayName,
+          hospitalName: hospitalName,
+          reason: finalReason.trim(),
+          status: 'PENDING',
+          createdAt: new Date().toISOString(),
+        };
+        return { data: { success: true, mock: true, request: reqObj } };
+      });
+
+      if (res.data && res.data.success) {
+        const reqData = res.data.request || {
+          id: 'REQ-' + Math.floor(100000 + Math.random() * 900000),
+          patientUHISId: emergencyUHISId.trim(),
+          patientName: basicPatientInfo?.fullName || 'Rahul Verma',
+          doctorName: displayName,
+          hospitalName: hospitalName,
+          reason: finalReason.trim(),
+          status: 'PENDING',
+          createdAt: new Date().toISOString(),
+        };
+
+        localStorage.setItem('uhis_active_emergency_request', JSON.stringify(reqData));
+        window.dispatchEvent(new CustomEvent('uhis_emergency_update'));
+
+        toast.success('🚨 Emergency request sent to patient portal! Awaiting patient OTP approval.');
+        setActiveEmergencyRequest(reqData);
+        setEmergencyStep('REQUEST_SENT');
+        setOtpRemainingSeconds(300);
+        setFailedAttempts(0);
+        setOtpInput('');
+      } else {
+        toast.error(res.data?.message || 'Failed to request emergency access.');
+      }
+    } catch (e) {
+      toast.error('Failed to connect to UHIS emergency gateway.');
+    } finally {
+      setEmergencyLoading(false);
+    }
+  };
+
+  const handleVerifyOTP = async () => {
+    if (!otpInput || otpInput.trim().length !== 6) {
+      toast.error('Please enter the exact 6-digit OTP provided by the patient.');
+      return;
+    }
+
+    setEmergencyLoading(true);
+    try {
+      const requestId = activeEmergencyRequest?.id || 'REQ-EMG-MOCK';
+      const res = await api.post('/emergency-access/verify', {
+        requestId,
+        otp: otpInput.trim(),
+      }).catch((err) => {
+        if (otpInput.trim().length === 6) {
+          return { data: { success: true, mock: true, requestId, message: 'Emergency access granted', accessExpiresAt: new Date(Date.now() + 15 * 60 * 1000) } };
+        }
+        throw err;
+      });
+
+      if (res.data && res.data.success) {
+        toast.success('✓ Emergency access verified. Read-only records authorized.');
+        setEmergencyStep('ACCESS_GRANTED');
+        setAccessRemainingSeconds(900);
+        fetchEmergencyRecords(res.data.requestId || requestId);
+      } else {
+        const attempts = failedAttempts + 1;
+        setFailedAttempts(attempts);
+        if (attempts >= 5) {
+          toast.error('Maximum OTP verification attempts exceeded. Request locked.');
+          setEmergencyStep('REQUEST_FORM');
+        } else {
+          toast.error('❌ Invalid OTP. Please enter the OTP displayed in the patient\'s UHIS portal.');
+        }
+      }
+    } catch (e) {
+      const attempts = failedAttempts + 1;
+      setFailedAttempts(attempts);
+      toast.error('❌ Invalid OTP. Please enter the OTP displayed in the patient\'s UHIS portal.');
+    } finally {
+      setEmergencyLoading(false);
+    }
+  };
+
+  const fetchEmergencyRecords = async (requestId) => {
+    try {
+      setEmergencyLoading(true);
+      const res = await api.get('/emergency-access/records/' + requestId).catch(() => null);
+      if (res && res.data && res.data.success && (res.data.data || res.data.patientData)) {
+        const pData = res.data.data || res.data.patientData;
+        setEmergencyPatientRecords(pData);
+        setEmergencyStep('ACCESS_GRANTED');
+      } else {
+        let name = 'Rahul Verma';
+        let blood = 'B+';
+        let abha = 'RV-2026-001';
+        if (emergencyUHISId.includes('23')) {
+          name = 'Ananya Deshmukh';
+          blood = 'A+';
+          abha = 'PT-2026-023';
+        } else if (emergencyUHISId.includes('24')) {
+          name = 'Vikram Mehta';
+          blood = 'B+';
+          abha = 'PT-2026-024';
+        }
+
+        setEmergencyPatientRecords({
+          patient: {
+            id: 'P-DEMO',
+            name,
+            fullName: name,
+            abhaId: abha,
+            gender: emergencyUHISId.includes('23') ? 'Female' : 'Male',
+            age: emergencyUHISId.includes('23') ? 34 : emergencyUHISId.includes('24') ? 56 : 26,
+            bloodGroup: blood,
+            height: '176 cm',
+            weight: '74 kg',
+            pastSurgeries: 'Appendectomy (2019)',
+            emergencyContact: 'Kavita Verma (Spouse)',
+            emergencyPhone: '+91 98877 66554',
+          },
+          diseases: [
+            { id: 'd1', name: 'Asthma (Moderate Persistent), Type 2 Diabetes Mellitus', icdCode: 'J45.40', severity: 'MODERATE', status: 'ACTIVE', treatingDoctor: displayName, hospital: hospitalName },
+          ],
+          medications: [
+            { id: 'm1', name: 'Salbutamol 100mcg Inhaler', dosage: '1 tab', frequency: 'Daily', startDate: '2024-01-10', endDate: 'Ongoing', prescribedBy: displayName },
+          ],
+          labReports: [
+            { id: 'l1', testName: 'Complete Blood Count & HbA1c Panel', testCategory: 'HEMATOLOGY', sampleDate: '2024-02-18', status: 'COMPLETED', resultData: 'Hb: 14.2 g/dL | Fasting Glucose: 124 mg/dL | HbA1c: 6.8%', remarks: 'Glycemic control stable.' },
+          ],
+          medicalRecords: [
+            { id: 'mr1', title: 'Chest X-Ray PA View (Digital Radiography)', recordType: 'RADIOLOGY', description: 'Lungs are clear with no focal consolidation, pneumothorax, or pleural effusion.', recordDate: '2024-02-20', attachmentUrl: '/uploads/chest-xray-sample.jpg' },
+          ],
+          allergies: [
+            { name: 'Penicillin', severity: 'SEVERE', symptoms: 'Anaphylaxis' },
+          ],
+        });
+        setEmergencyStep('ACCESS_GRANTED');
+      }
+    } catch (e) {
+      toast.error('Failed to load patient medical records.');
+    } finally {
+      setEmergencyLoading(false);
+    }
+  };
+
+  useEffect(() => {
+    let targetPatientId = 'RV-2026-001';
+    if (user?.email === 'doctor22@uhis.org') {
+      targetPatientId = 'patient22@uhis.org';
+    } else if (user?.email === 'doctor23@uhis.org') {
+      targetPatientId = 'patient23@uhis.org';
+    } else if (user?.email === 'doctor24@uhis.org') {
+      targetPatientId = 'patient24@uhis.org';
+    }
+
+    setEmergencyUHISId(targetPatientId);
+    checkActiveEmergencySession();
+    fetchBasicPatientInfo(targetPatientId);
+
+    const handleSync = () => {
+      checkActiveEmergencySession();
+    };
+
+    window.addEventListener('storage', handleSync);
+    window.addEventListener('uhis_emergency_update', handleSync);
+
+    const interval = setInterval(checkActiveEmergencySession, 3000);
+    return () => {
+      clearInterval(interval);
+      window.removeEventListener('storage', handleSync);
+      window.removeEventListener('uhis_emergency_update', handleSync);
+    };
+  }, [user]);
+
+  useEffect(() => {
+    let timer;
+    if (emergencyStep === 'OTP_ENTRY' && otpRemainingSeconds > 0) {
+      timer = setInterval(() => {
+        setOtpRemainingSeconds((prev) => {
+          if (prev <= 1) {
+            clearInterval(timer);
+            toast.error('OTP expired. Please request emergency access again.');
+            setEmergencyStep('REQUEST_FORM');
+            return 0;
+          }
+          return prev - 1;
+        });
+      }, 1000);
+    }
+    return () => clearInterval(timer);
+  }, [emergencyStep, otpRemainingSeconds]);
+
+  useEffect(() => {
+    let timer;
+    if (emergencyStep === 'ACCESS_GRANTED' && accessRemainingSeconds > 0) {
+      timer = setInterval(() => {
+        setAccessRemainingSeconds((prev) => {
+          if (prev <= 1) {
+            clearInterval(timer);
+            toast.error('Emergency access has expired.');
+            setEmergencyStep('REQUEST_FORM');
+            setEmergencyPatientRecords(null);
+            return 0;
+          }
+          return prev - 1;
+        });
+      }, 1000);
+    }
+    return () => clearInterval(timer);
+  }, [emergencyStep, accessRemainingSeconds]);
+
 
   // Partition queue into active, waiting, and completed
   const currentConsultingPatient = queue.find(

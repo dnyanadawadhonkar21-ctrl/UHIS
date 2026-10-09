@@ -31,7 +31,7 @@ export default function RegisterPage() {
   const [loading, setLoading] = useState(false);
   const [errorMessage, setErrorMessage] = useState("");
   const [createdUser, setCreatedUser] = useState(null);
-  const [loading, setLoading] = useState(false);
+  
 
   const [form, setForm] = useState({
     name: "",
