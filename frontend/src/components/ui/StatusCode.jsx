@@ -9,13 +9,25 @@ const DOT = {
   purple: "●",
 };
 
-export default function StatusCode({ status = "muted", label, pulse = false }) {
+export default function StatusCode({
+  status = "muted",
+  label,
+  pulse = false,
+  style = {},
+  className = "",
+}) {
   return (
-    <span className={`status-${status}`}>
-      <span className={pulse ? "pulse-signal" : ""} style={{ fontSize: "0.55rem" }}>
+    <span
+      className={`status-${status} ${className}`.trim()}
+      style={{ display: "inline-flex", alignItems: "center", gap: "5px", ...style }}
+    >
+      <span
+        className={pulse ? "pulse-signal" : ""}
+        style={{ fontSize: "0.5rem", lineHeight: 1, display: "inline-block" }}
+      >
         {DOT[status] || "●"}
       </span>
-      {label}
+      <span>{label}</span>
     </span>
   );
 }
